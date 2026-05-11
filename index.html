@@ -58,7 +58,7 @@
         #cloud-status { display: flex; align-items: center; font-size: 0.9em; font-weight: bold; color: var(--success); }
 
         .book-section { border: 2px solid var(--border); border-radius: 8px; margin-bottom: 30px; overflow: hidden; background: var(--bg); }
-        .book-title-bar { background: var(--book-header-bg); padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 1.2em; font-weight: bold; }
+        .book-title-bar { background: var(--book-header-bg); padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 1.2em; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         
         .extractions-container { padding: 15px; }
         
@@ -132,7 +132,6 @@
     let dragBookId = null;
     let dragExId = null;
 
-    // 故意用 fb_config_reading，避免同你之前個 Prompt DB 撞 Key 導致 Bug
     let firebaseConfig = JSON.parse(localStorage.getItem('fb_config_reading'));
     let secretPath = localStorage.getItem('fb_secret_reading') || "default";
     let fbDB;
@@ -177,12 +176,11 @@
         fbDB = firebase.database();
         let isFirstLoad = true;
         
-        // 監聽 Firebase 變化
         fbDB.ref('reading_notes/' + secretPath).on('value', (snapshot) => {
             const data = snapshot.val();
             
             if (isFirstLoad && !data && db.length > 0) {
-                syncToCloud(); // 如果雲端吉，但本地有嘢，推上去
+                syncToCloud(); 
                 isFirstLoad = false;
                 return;
             }
@@ -197,7 +195,6 @@
         });
     }
 
-    // 將資料推上雲端 (所有動作完結後 Call 呢個)
     function syncToCloud() {
         syncCurrentState();
         if (fbDB) {
@@ -207,7 +204,7 @@
         }
     }
 
-    // --- JSON 匯入與匯出 (保留作備份用) ---
+    // --- JSON 匯入與匯出 ---
     async function exportJSON() {
         syncCurrentState();
         const dataStr = JSON.stringify(db, null, 2);
@@ -242,7 +239,7 @@
         reader.onload = (e) => {
             try {
                 db = JSON.parse(e.target.result);
-                syncToCloud(); // 匯入後即刻上雲端
+                syncToCloud(); 
                 alert("✅ 成功匯入並同步至雲端！");
             } catch (error) { alert("❌ JSON 格式錯誤。"); }
             event.target.value = '';
@@ -253,12 +250,10 @@
     // 將畫面上打緊嘅字同步落 variable
     function syncCurrentState() {
         db.forEach(book => {
-            // 👇 呢度就係漏咗嘅「同步書本標題」功能！
             const titleEl = document.getElementById(`book-title-${book.id}`);
             if (titleEl) {
                 book.title = titleEl.innerText.trim() === '' ? DEFAULT_BOOK_TITLE : titleEl.innerText;
             }
-            // 👆 新增完畢
 
             const sourceEl = document.getElementById(`source-${book.id}`);
             if (sourceEl) book.originalText = sourceEl.innerHTML;
@@ -276,7 +271,6 @@
         });
     }
 
-    // --- 打字/編輯結束時觸發雲端儲存 ---
     function handleContentBlur() {
         syncToCloud(); 
     }
@@ -305,7 +299,7 @@
                 if (id.includes('subheading-text')) el.innerText = DEFAULT_SUB_HEADING;
                 el.classList.add('default-text');
             }
-            syncToCloud(); // 改完即刻推上雲
+            syncToCloud(); 
         };
         
         el.onkeydown = function(e) {
@@ -354,6 +348,16 @@
         syncToCloud();
     }
 
+    // 🌟 新增：刪除成個 Chapter 嘅功能
+    function deleteBook(bookId) {
+        if(confirm("⚠️ 確定要刪除整個章節同埋入面所有筆記？此動作無法復原！")) {
+            syncCurrentState();
+            db = db.filter(b => b.id !== bookId);
+            initRender(); // 即時喺畫面剷走
+            syncToCloud(); // 通知雲端
+        }
+    }
+
     function handleTxtUpload(event, bookId) {
         const file = event.target.files[0];
         if(!file) return;
@@ -366,17 +370,25 @@
         reader.readAsText(file);
     }
 
+    // 🌟 修正：反白並節錄文字，加入即時本地渲染
     function extractText(bookId) {
         const selection = window.getSelection();
         const selectedText = selection.toString().trim();
-        if (!selectedText) { alert("⚠️ 請先在下方反白選取文字！"); return; }
+        if (!selectedText) { alert("⚠️ 請先在下方原文區反白選取文字！"); return; }
 
-        syncCurrentState();
-        const book = db.find(b => b.id === bookId);
+        // 1. 喺畫面上即刻移除你反白咗嗰段字
         const range = selection.getRangeAt(0);
-        range.deleteContents();
-        book.originalText = document.getElementById(`source-${bookId}`).innerHTML;
+        try {
+            range.deleteContents();
+        } catch (e) {
+            console.warn("選取範圍不在可編輯區域");
+        }
 
+        // 2. 將移除咗字之後嘅「最新畫面狀態」Save 落系統
+        syncCurrentState();
+
+        // 3. 準備新嘅節錄資料
+        const book = db.find(b => b.id === bookId);
         book.extractions.push({
             id: Date.now(),
             subHeading: DEFAULT_SUB_HEADING,
@@ -386,6 +398,11 @@
         });
 
         selection.removeAllRanges();
+        
+        // 4. 極重要：未等 Firebase，即刻將新節錄畫出嚟，保證秒速有反應
+        renderLists(bookId);
+        
+        // 5. 最後先靜靜雞推上雲端
         syncToCloud();
     }
 
@@ -395,6 +412,7 @@
             syncCurrentState();
             const book = db.find(b => b.id === bookId);
             book.extractions = book.extractions.filter(e => e.id !== exId);
+            renderLists(bookId); // 即時本地剷走
             syncToCloud();
         }
     }
@@ -414,6 +432,7 @@
         const tgtIdx = book.extractions.findIndex(ex => ex.id === targetExId);
         const [movedItem] = book.extractions.splice(srcIdx, 1);
         book.extractions.splice(tgtIdx, 0, movedItem);
+        renderLists(dragBookId); // 即時本地更新排位
         syncToCloud();
         return false;
     }
@@ -432,7 +451,9 @@
 
     function renderLists(bookId) {
         const book = db.find(b => b.id === bookId);
+        if (!book) return; // 防呆
         const container = document.getElementById(`extractions-${bookId}`);
+        if (!container) return;
         
         container.innerHTML = book.extractions.map(ex => {
             const isDefaultSub = ex.subHeading === DEFAULT_SUB_HEADING;
@@ -483,7 +504,8 @@
 
         section.innerHTML = `
             <div class="book-title-bar">
-                <span id="book-title-${book.id}" class="${isDefaultTitle ? 'default-text' : ''}" ondblclick="enableInlineEdit(event, 'book-title-${book.id}')">${book.title}</span>
+                <span id="book-title-${book.id}" class="${isDefaultTitle ? 'default-text' : ''}" ondblclick="enableInlineEdit(event, 'book-title-${book.id}')" style="flex-grow: 1;">${book.title}</span>
+                <button class="btn btn-danger btn-icon" onclick="deleteBook(${book.id})">🗑️ 刪除章節</button>
             </div>
             
             <div class="extractions-container" id="extractions-${book.id}">

@@ -176,12 +176,12 @@
         db = firebase.database();
         let isFirstLoad = true;
         
-        db.ref('reading_notes/' + secretPath).on('value', (snapshot) => {
+        // 【修改點 1】：路徑最後面加返 '/books'，確保淨係讀取陣列
+        db.ref('reading_notes/' + secretPath + '/books').on('value', (snapshot) => {
             if (isEditing) return; // 如果打緊字，唔好重新 render 打斷自己
             
             const data = snapshot.val();
             
-            // 初次載入：如果雲端無資料但本地有，將本地推上雲端
             if (isFirstLoad && !data && books.length > 0) {
                 syncToCloud();
                 isFirstLoad = false;
@@ -191,7 +191,6 @@
 
             books = data || [];
             
-            // 確保 books 入面嘅 extracts 係 array，防止 Firebase 將吉 array 變成 undefined
             books.forEach(b => { if(!b.extracts) b.extracts = []; });
 
             localStorage.setItem('myReadingNotes', JSON.stringify(books));
@@ -201,9 +200,8 @@
 
     function syncToCloud() {
         if (db) {
-            db.ref('reading_notes/' + secretPath).set({
-                books: books
-            });
+            // 【修改點 2】：路徑最後面加返 '/books'，直接將陣列推上去
+            db.ref('reading_notes/' + secretPath + '/books').set(books);
         }
     }
 

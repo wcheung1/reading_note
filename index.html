@@ -3,532 +3,538 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Reading Note System (Cloud Edition)</title>
+    <title>深度閱讀筆記系統 (Cloud Sync)</title>
     
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
     <style>
-        /* 完美修復對比度嘅配色方案 */
+        /* 日夜模式自動切換 (High Contrast) */
         :root {
-            --bg: #ffffff;
-            --text: #1a1a1a;
-            --border: #cccccc;
-            --book-header-bg: #f0f2f5;
-            --subheading-bg: #e7f3ff;
-            --subheading-text: #004a99;
-            --note-bg: #ffffff;
-            --danger: #dc3545;
-            --success: #28a745;
-            --hover: #f9f9f9;
-            --placeholder: #888888;
+            --bg-page: #f4f6f9;
+            --bg-card: #ffffff;
+            --bg-box: #ffffff;
+            --text-main: #2c3e50;
+            --text-muted: #7f8c8d;
+            --border-color: #bdc3c7;
+            --border-focus: #3498db;
+            --primary-color: #3498db;
+            --danger-color: #e74c3c;
+            --header-bg: #e8f4fd;
+            --sub-header-bg: #f1f2f6;
+            --hover-bg: #ecf0f1;
+            --overlay-bg: rgba(0,0,0,0.85);
         }
 
         @media (prefers-color-scheme: dark) {
             :root {
-                --bg: #121212;
-                --text: #ffffff;
-                --border: #444444;
-                --book-header-bg: #1e1e1e;
-                --subheading-bg: #1a3a5a;
-                --subheading-text: #a1c9f1;
-                --note-bg: #1a1a1a;
-                --danger: #ff6b6b;
-                --success: #2ea043;
-                --hover: #252525;
-                --placeholder: #aaaaaa;
+                --bg-page: #121212;
+                --bg-card: #1e1e1e;
+                --bg-box: #2a2a2a;
+                --text-main: #e0e0e0;
+                --text-muted: #a0a0a0;
+                --border-color: #555555;
+                --border-focus: #64b5f6;
+                --primary-color: #2980b9;
+                --danger-color: #c0392b;
+                --header-bg: #2c3e50;
+                --sub-header-bg: #333333;
+                --hover-bg: #3d3d3d;
             }
         }
 
-        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; margin: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-page); color: var(--text-main); margin: 0; padding: 20px; line-height: 1.6; }
         
-        .btn { cursor: pointer; padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--book-header-bg); color: var(--text); font-weight: bold; font-size: 0.9em; transition: 0.2s; }
-        .btn:hover { filter: brightness(0.9); }
-        .btn-danger { color: var(--danger); border-color: var(--danger); background: transparent; }
-        .btn-success { background: var(--success); color: white; border-color: var(--success); }
-        .btn-icon { padding: 4px 8px; font-size: 0.85em; }
+        /* 雲端設定畫面 CSS */
+        #setup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--overlay-bg); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .setup-box { background: var(--bg-card); padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; border: 1px solid var(--border-color); }
+        .setup-box h2 { margin-top: 0; color: var(--text-main); }
+        .setup-box input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid var(--border-color); border-radius: 5px; box-sizing: border-box; background: var(--bg-box); color: var(--text-main); font-size: 1em; }
+        
+        .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        #cloud-status { font-size: 0.9em; color: var(--text-muted); display: none; background: var(--bg-card); padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border-color); }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; background-color: #2ecc71; box-shadow: 0 0 5px #2ecc71; }
 
-        /* Firebase Setup 專用 CSS */
-        #setup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; z-index: 1000; }
-        .setup-box { background: var(--bg); color: var(--text); padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        .setup-box h2 { margin-top: 0; color: var(--subheading-text); }
-        .setup-box input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid var(--border); border-radius: 5px; box-sizing: border-box; background: var(--note-bg); color: var(--text); }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
-        .online { background-color: var(--success); box-shadow: 0 0 5px var(--success); }
-        #cloud-status { display: flex; align-items: center; font-size: 0.9em; font-weight: bold; color: var(--success); }
+        .toolbar { display: flex; gap: 10px; margin-bottom: 20px; background: var(--bg-card); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap; }
+        button { cursor: pointer; padding: 8px 15px; border: none; border-radius: 5px; background-color: var(--primary-color); color: white; font-weight: bold; font-size: 0.95em; transition: opacity 0.2s; }
+        button:hover { opacity: 0.8; }
+        .btn-danger { background-color: var(--danger-color); }
+        .btn-secondary { background-color: var(--text-muted); }
+        .icon-btn { background: transparent; color: var(--text-muted); padding: 5px; font-size: 1.2em; border: none; }
+        .icon-btn:hover { color: var(--danger-color); }
 
-        .book-section { border: 2px solid var(--border); border-radius: 8px; margin-bottom: 30px; overflow: hidden; background: var(--bg); }
-        .book-title-bar { background: var(--book-header-bg); padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 1.2em; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .book-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 25px; overflow: hidden; }
+        .book-header { background: var(--header-bg); padding: 15px 20px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid var(--border-color); transition: filter 0.2s; }
+        .book-header:hover, .subheading-bar:hover { filter: brightness(0.95); }
+        .book-title { flex-grow: 1; font-size: 1.4em; font-weight: bold; margin-left: 10px; }
         
-        .extractions-container { padding: 15px; }
+        .inline-edit-input { width: 100%; font-size: inherit; font-weight: inherit; font-family: inherit; background: transparent; color: inherit; border: 2px dashed var(--border-focus); padding: 2px 5px; border-radius: 4px; box-sizing: border-box; outline: none; }
         
-        .extraction-row { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 15px; overflow: hidden; background: var(--bg); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        
-        .row-header { background: var(--subheading-bg); color: var(--subheading-text); padding: 10px 15px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border); }
-        .row-header:hover { filter: brightness(0.95); }
-        .drag-handle { cursor: grab; opacity: 0.5; font-size: 1.2em; }
-        .drag-handle:active { cursor: grabbing; }
-        .arrow-icon { transition: transform 0.2s; font-size: 0.8em; }
-        
-        .row-body { display: flex; transition: all 0.3s ease; }
-        .row-body.collapsed { display: none; }
-        
-        .left-col, .right-col { flex: 1; display: flex; flex-direction: column; width: 50%; }
-        .left-col { border-right: 1px solid var(--border); }
-        
-        .col-toolbar { padding: 8px 15px; background: rgba(0,0,0,0.02); border-bottom: 1px dashed var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: var(--placeholder); }
-        
-        .col-content { padding: 15px; flex-grow: 1; outline: none; font-size: 0.95em; white-space: pre-wrap; word-break: break-word; color: var(--text); }
-        .left-col .col-content { font-style: italic; opacity: 0.9; }
-        .right-col .col-content { background: var(--note-bg); }
-        .col-content:focus { background: var(--hover); }
+        .book-body { padding: 20px; display: block; }
+        .collapsed .book-body { display: none; }
+        .arrow-icon { transition: transform 0.2s; display: inline-block; }
+        .collapsed .arrow-icon { transform: rotate(-90deg); }
 
-        [contenteditable="true"]:empty:before { content: attr(placeholder); color: var(--placeholder); pointer-events: none; display: block; }
-        .default-text { color: var(--placeholder); }
+        .extract-wrapper { border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 20px; overflow: hidden; background: var(--bg-card); }
+        .subheading-bar { background: var(--sub-header-bg); padding: 10px 15px; display: flex; align-items: center; border-bottom: 1px solid var(--border-color); cursor: pointer; }
+        .subheading-title { flex-grow: 1; font-weight: bold; font-size: 1.1em; margin-left: 10px; }
+        
+        .extract-body { display: flex; gap: 0; align-items: stretch; }
+        .collapsed-extract .extract-body { display: none; }
+        
+        .pane-left, .pane-right { flex: 1; display: flex; flex-direction: column; padding: 15px; }
+        .pane-left { border-right: 1px solid var(--border-color); }
+        .pane-header { font-size: 0.85em; color: var(--text-muted); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        
+        .text-box { flex-grow: 1; border: 2px solid var(--border-color); border-radius: 6px; background: var(--bg-box); padding: 12px; min-height: 100px; white-space: pre-wrap; word-wrap: break-word; outline: none; transition: border-color 0.2s; }
+        .text-box[contenteditable="true"] { border-color: var(--border-focus); background: var(--bg-page); cursor: text; }
+        .text-box:hover:not([contenteditable="true"]) { border-color: var(--text-muted); cursor: pointer; }
 
-        .source-container { padding: 20px; border-top: 3px double var(--border); background: var(--bg); }
-        .source-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: var(--book-header-bg); padding: 10px; border-radius: 6px; border: 1px solid var(--border); }
-        .source-area { outline: none; font-size: 1.05em; line-height: 1.8; min-height: 400px; padding: 10px; color: var(--text); }
-        .source-area:focus { background: var(--hover); }
-
-        .hidden { display: none !important; }
-        .toolbar-top { margin-bottom: 20px; display: flex; gap: 10px; background: var(--book-header-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border); align-items: center; }
+        .original-text-section { margin-top: 30px; border: 1px dashed var(--border-color); border-radius: 8px; padding: 15px; background: var(--bg-box); }
+        .original-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; cursor: pointer; }
+        .original-textarea { width: 100%; height: 300px; padding: 15px; border: 2px solid var(--border-color); border-radius: 6px; background: var(--bg-box); color: var(--text-main); font-family: inherit; font-size: 1em; resize: vertical; box-sizing: border-box; }
+        .original-textarea::selection { background: var(--border-focus); color: white; }
+        .upload-area { display: flex; gap: 10px; align-items: center; }
     </style>
 </head>
 <body>
 
     <div id="setup-overlay">
         <div class="setup-box">
-            <h2>🔐 首次雲端設定 (Reading Notes)</h2>
-            <p style="font-size: 0.85em; color: var(--placeholder);">請填入 Firebase Project Settings 中的資料：</p>
+            <h2>🔐 連接 Firebase 雲端資料庫</h2>
+            <p style="font-size: 0.85em; color: var(--text-muted);">請填入 Firebase Project Settings 中的資料：</p>
             <input type="text" id="conf-apiKey" placeholder="apiKey">
             <input type="text" id="conf-databaseURL" placeholder="databaseURL (例如 https://...)">
             <input type="text" id="conf-projectId" placeholder="projectId">
-            <input type="password" id="conf-secretKey" placeholder="自訂私隱密碼 (用嚟鎖住你嘅專屬數據)">
-            <button class="btn-success" style="width: 100%; margin-top: 15px; padding: 10px;" onclick="saveConfig()">🚀 開始同步數據</button>
-            <p style="font-size: 0.75em; color: var(--placeholder); margin-top: 10px;">* 資料會儲存在此瀏覽器，只需輸入一次。</p>
+            <input type="password" id="conf-secretKey" placeholder="自訂私隱密碼 (用嚟鎖住你嘅專屬資料)">
+            <button style="width: 100%; margin-top: 15px; background-color: #2ecc71;" onclick="saveConfig()">🚀 開始同步數據</button>
+            <p style="font-size: 0.75em; color: var(--text-muted); margin-top: 10px;">* 資料會儲存在此瀏覽器，只需輸入一次。</p>
         </div>
     </div>
 
-    <div class="toolbar-top">
-        <button class="btn" onclick="addNewBook()">📚 新增 Chapter</button>
+    <div class="header-container">
+        <h1>📚 深度閱讀筆記系統</h1>
+        <div id="cloud-status">
+            <span class="status-dot"></span> 雲端同步中
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button onclick="addBook()">➕ 加入新書</button>
         <div style="flex-grow: 1;"></div>
-        
-        <div id="cloud-status" class="hidden">
-            <span class="status-dot online"></span> 雲端同步中
-        </div>
-        
-        <div style="width: 15px;"></div> <input type="file" id="import-file" class="hidden" accept=".json" onchange="importJSON(event)">
-        <button class="btn" onclick="document.getElementById('import-file').click()" title="由 JSON 覆蓋目前進度">📥 匯入取代</button>
-        <button class="btn btn-success" onclick="exportJSON()">📤 匯出備份 (Save As)</button>
-        <button class="btn" onclick="clearConfig()" style="background-color: var(--danger); color: white; border-color: var(--danger);">⚙️ 重設雲端</button>
+        <button onclick="exportJSON()" style="background-color: #27ae60;">💾 本地備份 (JSON)</button>
+        <input type="file" id="import-file" style="display:none" accept=".json" onchange="importJSON(event)">
+        <button onclick="document.getElementById('import-file').click()" style="background-color: #f39c12;">📂 匯入覆蓋</button>
+        <button class="btn-secondary" onclick="clearConfig()">⚙️ 重設雲端連線</button>
     </div>
 
-    <div id="main-app"></div>
+    <div id="app-container"></div>
 
 <script>
-    // --- 核心變數與 Firebase 設定 ---
-    let db = [];
-    let dragBookId = null;
-    let dragExId = null;
-
-    let firebaseConfig = JSON.parse(localStorage.getItem('fb_config_reading'));
-    let secretPath = localStorage.getItem('fb_secret_reading') || "default";
-    let fbDB;
-
-    const DEFAULT_BOOK_TITLE = "新章節";
-    const DEFAULT_SUB_HEADING = "📌 新節錄";
+    // --- 雲端與資料狀態變數 ---
+    let db;
+    let firebaseConfig = JSON.parse(localStorage.getItem('fb_notes_config'));
+    let secretPath = localStorage.getItem('fb_notes_secret') || "default";
+    let books = JSON.parse(localStorage.getItem('myReadingNotes')) || [];
+    let dragData = null;
+    let isEditing = false; // 防止 Firebase 刷新打斷打字
 
     // --- 初始化 ---
     window.onload = function() {
         if (!firebaseConfig) {
             document.getElementById('setup-overlay').style.display = 'flex';
-            initRender(); 
+            render(); 
         } else {
-            document.getElementById('cloud-status').classList.remove('hidden');
+            document.getElementById('cloud-status').style.display = 'block';
             initFirebase();
         }
     };
 
+    // --- Firebase 雲端連線邏輯 ---
     function saveConfig() {
         const config = {
-            apiKey: document.getElementById('conf-apiKey').value.trim(),
-            databaseURL: document.getElementById('conf-databaseURL').value.trim(),
-            projectId: document.getElementById('conf-projectId').value.trim(),
+            apiKey: document.getElementById('conf-apiKey').value,
+            databaseURL: document.getElementById('conf-databaseURL').value,
+            projectId: document.getElementById('conf-projectId').value,
         };
-        const secret = document.getElementById('conf-secretKey').value.trim() || "my_secret_reading";
-        localStorage.setItem('fb_config_reading', JSON.stringify(config));
-        localStorage.setItem('fb_secret_reading', secret);
+        const secret = document.getElementById('conf-secretKey').value || "my_secret_notes";
+        localStorage.setItem('fb_notes_config', JSON.stringify(config));
+        localStorage.setItem('fb_notes_secret', secret);
         location.reload();
     }
 
     function clearConfig() {
         if(confirm("確定要重設雲端連線資料？(唔會刪除你嘅筆記，只係登出雲端)")) {
-            localStorage.removeItem('fb_config_reading');
-            localStorage.removeItem('fb_secret_reading');
+            localStorage.removeItem('fb_notes_config');
+            localStorage.removeItem('fb_notes_secret');
             location.reload();
         }
     }
 
-    // --- Firebase 雲端同步邏輯 ---
     function initFirebase() {
         firebase.initializeApp(firebaseConfig);
-        fbDB = firebase.database();
+        db = firebase.database();
         let isFirstLoad = true;
         
-        fbDB.ref('reading_notes/' + secretPath).on('value', (snapshot) => {
+        db.ref('reading_notes/' + secretPath).on('value', (snapshot) => {
+            if (isEditing) return; // 如果打緊字，唔好重新 render 打斷自己
+            
             const data = snapshot.val();
             
-            if (isFirstLoad && !data && db.length > 0) {
-                syncToCloud(); 
+            // 初次載入：如果雲端無資料但本地有，將本地推上雲端
+            if (isFirstLoad && !data && books.length > 0) {
+                syncToCloud();
                 isFirstLoad = false;
                 return;
             }
             isFirstLoad = false;
 
-            if (data) {
-                db = data.database || [];
-            } else {
-                db = [];
-            }
-            initRender();
+            books = data || [];
+            
+            // 確保 books 入面嘅 extracts 係 array，防止 Firebase 將吉 array 變成 undefined
+            books.forEach(b => { if(!b.extracts) b.extracts = []; });
+
+            localStorage.setItem('myReadingNotes', JSON.stringify(books));
+            render();
         });
     }
 
     function syncToCloud() {
-        syncCurrentState();
-        if (fbDB) {
-            fbDB.ref('reading_notes/' + secretPath).set({
-                database: db
+        if (db) {
+            db.ref('reading_notes/' + secretPath).set({
+                books: books
             });
         }
     }
 
-    // --- JSON 匯入與匯出 ---
+    function saveData() {
+        localStorage.setItem('myReadingNotes', JSON.stringify(books));
+        if (db) {
+            syncToCloud(); 
+        } else {
+            render(); 
+        }
+    }
+
+    // --- 核心渲染邏輯 ---
+    function render() {
+        const container = document.getElementById('app-container');
+        container.innerHTML = '';
+
+        books.forEach((book, bIndex) => {
+            const bookEl = document.createElement('div');
+            bookEl.className = `book-card ${book.collapsed ? 'collapsed' : ''}`;
+            
+            // Book Header (加入 Draggable)
+            let headerHTML = `
+                <div class="book-header" draggable="true" ondragstart="dragStart(event, 'book', ${bIndex})" ondragover="dragOver(event)" ondrop="drop(event, 'book', ${bIndex})" onclick="toggleBook(${book.id}, event)">
+                    <span class="arrow-icon">▼</span>
+            `;
+            if (book.isEditingTitle) {
+                headerHTML += `<input type="text" class="inline-edit-input" id="book-title-${book.id}" value="${book.title}" onfocus="isEditing=true" onblur="saveBookTitle(${book.id})" onkeydown="if(event.key==='Enter') this.blur()" onclick="event.stopPropagation()">`;
+            } else {
+                headerHTML += `<div class="book-title" ondblclick="editBookTitle(${book.id}, event)">${book.title || '<span style="color:var(--text-muted); font-style:italic;">(空白書名，雙擊修改)</span>'}</div>`;
+            }
+            headerHTML += `
+                    <button class="btn-danger" style="margin-left: 10px;" onclick="deleteBook(${book.id}, event)">刪除書本</button>
+                </div>
+                <div class="book-body">
+                    <div id="extracts-container-${book.id}">
+            `;
+            
+            // Extracts (加入 Draggable)
+            book.extracts.forEach((ext, eIndex) => {
+                headerHTML += `
+                    <div class="extract-wrapper ${ext.collapsed ? 'collapsed-extract' : ''}">
+                        <div class="subheading-bar" draggable="true" ondragstart="dragStart(event, 'extract', ${bIndex}, ${eIndex})" ondragover="dragOver(event)" ondrop="drop(event, 'extract', ${bIndex}, ${eIndex})" onclick="toggleExtract(${book.id}, ${ext.id}, event)">
+                            <span class="arrow-icon">▼</span>
+                `;
+                if (ext.isEditingTitle) {
+                    headerHTML += `<input type="text" class="inline-edit-input" id="ext-title-${ext.id}" value="${ext.subheading}" onfocus="isEditing=true" onblur="saveExtTitle(${book.id}, ${ext.id})" onkeydown="if(event.key==='Enter') this.blur()" onclick="event.stopPropagation()">`;
+                } else {
+                    headerHTML += `<div class="subheading-title" ondblclick="editExtTitle(${book.id}, ${ext.id}, event)">${ext.subheading || '<span style="color:var(--text-muted); font-style:italic;">(空白章節，雙擊修改)</span>'}</div>`;
+                }
+                headerHTML += `
+                            <button class="icon-btn" onclick="deleteExtract(${book.id}, ${ext.id}, event)" title="刪除此節錄">🗑️</button>
+                        </div>
+                        <div class="extract-body">
+                            <div class="pane-left">
+                                <div class="pane-header">
+                                    <span>📖 原文節錄 (雙擊修改)</span>
+                                    <button style="padding: 2px 8px; font-size: 0.8em;" onclick="copyText('ext-content-${ext.id}')">複製</button>
+                                </div>
+                                <div class="text-box" id="ext-content-${ext.id}" ondblclick="enableEdit(this)" onblur="saveTextEdit(this, ${book.id}, ${ext.id}, 'extract')">${ext.extract}</div>
+                            </div>
+                            <div class="pane-right">
+                                <div class="pane-header">
+                                    <span>✍️ 個人筆記 (雙擊修改)</span>
+                                    <button style="padding: 2px 8px; font-size: 0.8em;" onclick="copyText('note-content-${ext.id}')">複製</button>
+                                </div>
+                                <div class="text-box" id="note-content-${ext.id}" ondblclick="enableEdit(this)" onblur="saveTextEdit(this, ${book.id}, ${ext.id}, 'note')">${ext.note}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            headerHTML += `</div>`; // End extracts container
+
+            // Original Text Section 
+            headerHTML += `
+                    <div class="original-text-section">
+                        <div class="original-header" onclick="toggleOriginalText(${book.id})">
+                            <strong style="font-size: 1.1em;"><span class="arrow-icon" id="orig-arrow-${book.id}" style="transform: ${book.origCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)'}">▼</span> 📚 原文書本內容</strong>
+                            <div class="upload-area" onclick="event.stopPropagation()">
+                                <input type="file" id="file-${book.id}" style="display:none" accept=".txt,.md" onchange="handleFileUpload(${book.id}, event)">
+                                <button onclick="document.getElementById('file-${book.id}').click()" style="background-color: var(--text-muted);">上傳 TXT/MD</button>
+                                <button onclick="extractSelectedText(${book.id})" style="background-color: var(--primary-color);">✂️ 節錄反白文字</button>
+                            </div>
+                        </div>
+                        <div id="orig-body-${book.id}" style="display: ${book.origCollapsed ? 'none' : 'block'};">
+                            <textarea class="original-textarea" id="orig-textarea-${book.id}" placeholder="上傳書本檔案，或直接在此貼上原文..." onfocus="isEditing=true" onblur="saveOriginalText(${book.id})">${book.originalText || ''}</textarea>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            bookEl.innerHTML = headerHTML;
+            container.appendChild(bookEl);
+
+            // Auto-focus logic
+            if (book.isEditingTitle) {
+                const input = document.getElementById(`book-title-${book.id}`);
+                if(input) { input.focus(); input.select(); }
+            }
+            book.extracts.forEach(ext => {
+                if (ext.isEditingTitle) {
+                    const input = document.getElementById(`ext-title-${ext.id}`);
+                    if(input) { input.focus(); input.select(); }
+                }
+            });
+        });
+    }
+
+    // --- 書本操作 ---
+    function addBook() {
+        const newId = Date.now();
+        books.unshift({ id: newId, title: "", originalText: "", collapsed: false, origCollapsed: false, isEditingTitle: true, extracts: [] });
+        saveData(); // Save trigger re-render
+    }
+    function deleteBook(id, e) {
+        e.stopPropagation();
+        if(confirm("確定刪除整本書及其所有筆記？")) {
+            books = books.filter(b => b.id !== id);
+            saveData();
+        }
+    }
+    function toggleBook(id, e) {
+        if(e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+        const book = books.find(b => b.id === id);
+        book.collapsed = !book.collapsed;
+        saveData();
+    }
+    function editBookTitle(id, e) {
+        e.stopPropagation();
+        const book = books.find(b => b.id === id);
+        book.isEditingTitle = true;
+        render(); // Local UI change
+    }
+    function saveBookTitle(id) {
+        isEditing = false;
+        const book = books.find(b => b.id === id);
+        const input = document.getElementById(`book-title-${id}`);
+        if(input) {
+            book.title = input.value;
+            book.isEditingTitle = false;
+            saveData();
+        }
+    }
+
+    // --- 節錄操作 ---
+    function extractSelectedText(bookId) {
+        const textarea = document.getElementById(`orig-textarea-${bookId}`);
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        
+        if (start === end) {
+            alert("請先喺下面原文區域 Highlight 反白你想節錄嘅文字！");
+            return;
+        }
+
+        const selectedText = textarea.value.substring(start, end);
+        const remainingText = textarea.value.substring(0, start) + textarea.value.substring(end);
+
+        const book = books.find(b => b.id === bookId);
+        book.originalText = remainingText;
+        
+        if (!book.extracts) book.extracts = [];
+        book.extracts.push({
+            id: Date.now(),
+            subheading: "",
+            extract: selectedText,
+            note: "",
+            collapsed: false,
+            isEditingTitle: true
+        });
+        
+        saveData();
+    }
+
+    function deleteExtract(bookId, extId, e) {
+        e.stopPropagation();
+        if(confirm("確定刪除此節錄及筆記？")) {
+            const book = books.find(b => b.id === bookId);
+            book.extracts = book.extracts.filter(ex => ex.id !== extId);
+            saveData();
+        }
+    }
+    function toggleExtract(bookId, extId, e) {
+        if(e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+        const book = books.find(b => b.id === bookId);
+        const ext = book.extracts.find(x => x.id === extId);
+        ext.collapsed = !ext.collapsed;
+        saveData();
+    }
+    function editExtTitle(bookId, extId, e) {
+        e.stopPropagation();
+        const book = books.find(b => b.id === bookId);
+        const ext = book.extracts.find(x => x.id === extId);
+        ext.isEditingTitle = true;
+        render();
+    }
+    function saveExtTitle(bookId, extId) {
+        isEditing = false;
+        const book = books.find(b => b.id === bookId);
+        const ext = book.extracts.find(x => x.id === extId);
+        const input = document.getElementById(`ext-title-${extId}`);
+        if(input) {
+            ext.subheading = input.value;
+            ext.isEditingTitle = false;
+            saveData();
+        }
+    }
+
+    // --- 內容編輯 (ContentEditable) ---
+    function enableEdit(el) {
+        isEditing = true;
+        el.contentEditable = "true";
+        el.focus();
+    }
+    function saveTextEdit(el, bookId, extId, type) {
+        isEditing = false;
+        el.contentEditable = "false";
+        const book = books.find(b => b.id === bookId);
+        const ext = book.extracts.find(x => x.id === extId);
+        if (type === 'extract') ext.extract = el.innerText;
+        if (type === 'note') ext.note = el.innerText;
+        
+        saveData(); 
+    }
+
+    // --- 原文區域操作 ---
+    function toggleOriginalText(bookId) {
+        const book = books.find(b => b.id === bookId);
+        book.origCollapsed = !book.origCollapsed;
+        saveData();
+    }
+    function saveOriginalText(bookId) {
+        isEditing = false;
+        const book = books.find(b => b.id === bookId);
+        const textarea = document.getElementById(`orig-textarea-${bookId}`);
+        if(textarea) book.originalText = textarea.value;
+        saveData();
+    }
+    function handleFileUpload(bookId, event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const book = books.find(b => b.id === bookId);
+            book.originalText = e.target.result;
+            book.origCollapsed = false; 
+            saveData();
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+
+    // --- 拖曳排序 (Drag & Drop) 支援書本與節錄 ---
+    function dragStart(e, type, bIndex, eIndex = null) {
+        if(e.target.tagName === 'INPUT') { e.preventDefault(); return; }
+        dragData = { type, bIndex, eIndex };
+        e.dataTransfer.effectAllowed = "move";
+    }
+    function dragOver(e) { e.preventDefault(); }
+    
+    function drop(e, targetType, targetBIndex, targetEIndex = null) {
+        e.preventDefault();
+        if(!dragData || dragData.type !== targetType) return; 
+        
+        if (targetType === 'book' && dragData.bIndex !== targetBIndex) {
+            // 書本重新排位
+            const item = books.splice(dragData.bIndex, 1)[0];
+            books.splice(targetBIndex, 0, item);
+            saveData();
+        } else if (targetType === 'extract' && dragData.bIndex === targetBIndex && dragData.eIndex !== targetEIndex) {
+            // 同一本書內嘅節錄重新排位
+            const book = books[targetBIndex];
+            const item = book.extracts.splice(dragData.eIndex, 1)[0];
+            book.extracts.splice(targetEIndex, 0, item);
+            saveData();
+        }
+        dragData = null;
+    }
+
+    // --- 實用功能 ---
+    function copyText(elementId) {
+        const el = document.getElementById(elementId);
+        if(!el) return;
+        navigator.clipboard.writeText(el.innerText).then(() => {
+            alert('✅ 內容已複製！');
+        });
+    }
+
+    // --- 本地 JSON 備份 (作為 Firebase 以外嘅定海神針) ---
     async function exportJSON() {
-        syncCurrentState();
-        const dataStr = JSON.stringify(db, null, 2);
+        if (books.length === 0) { alert("無內容可以匯出！"); return; }
+        document.querySelectorAll('textarea').forEach(el => el.blur());
+        document.querySelectorAll('[contenteditable="true"]').forEach(el => el.blur());
+
+        const dataStr = JSON.stringify(books, null, 2);
         try {
             if (window.showSaveFilePicker) {
-                const handle = await window.showSaveFilePicker({
-                    suggestedName: `Reading_Notes_${new Date().toISOString().slice(0,10)}.json`,
-                    types: [{ description: 'JSON File', accept: {'application/json': ['.json']} }]
-                });
+                const handle = await window.showSaveFilePicker({ suggestedName: 'my_reading_notes.json', types: [{ description: 'JSON', accept: {'application/json': ['.json']} }] });
                 const writable = await handle.createWritable();
                 await writable.write(dataStr);
                 await writable.close();
-                alert("✅ 成功儲存備份！");
+                alert("✅ 筆記已成功儲存！");
             } else {
-                const blob = new Blob([dataStr], { type: "application/json" });
+                const blob = new Blob([dataStr], {type: "application/json"});
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url;
-                a.download = `Reading_Notes_${new Date().toISOString().slice(0,10)}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
+                a.href = url; a.download = "my_reading_notes.json";
+                document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
             }
-        } catch (err) {
-            if (err.name !== 'AbortError') alert("儲存失敗: " + err.message);
-        }
+        } catch (error) { if (error.name !== 'AbortError') alert("❌ 儲存失敗！"); }
     }
 
     function importJSON(event) {
         const file = event.target.files[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = function(e) {
             try {
-                db = JSON.parse(e.target.result);
-                syncToCloud(); 
+                books = JSON.parse(e.target.result);
+                saveData(); // 匯入後自動 Push 上 Firebase
                 alert("✅ 成功匯入並同步至雲端！");
-            } catch (error) { alert("❌ JSON 格式錯誤。"); }
-            event.target.value = '';
+            } catch (error) { alert("❌ 檔案格式出錯！"); }
         };
         reader.readAsText(file);
+        event.target.value = '';
     }
 
-    // 將畫面上打緊嘅字同步落 variable
-    function syncCurrentState() {
-        db.forEach(book => {
-            const titleEl = document.getElementById(`book-title-${book.id}`);
-            if (titleEl) {
-                book.title = titleEl.innerText.trim() === '' ? DEFAULT_BOOK_TITLE : titleEl.innerText;
-            }
-
-            const sourceEl = document.getElementById(`source-${book.id}`);
-            if (sourceEl) book.originalText = sourceEl.innerHTML;
-            
-            book.extractions.forEach(ex => {
-                const subEl = document.getElementById(`subheading-text-${ex.id}`);
-                if (subEl) ex.subHeading = subEl.innerText.trim() === '' ? DEFAULT_SUB_HEADING : subEl.innerText;
-                
-                const textEl = document.getElementById(`ext-text-${ex.id}`);
-                if (textEl) ex.text = textEl.innerText;
-                
-                const noteEl = document.getElementById(`note-${ex.id}`);
-                if (noteEl) ex.note = noteEl.innerText; 
-            });
-        });
-    }
-
-    function handleContentBlur() {
-        syncToCloud(); 
-    }
-
-    function enableInlineEdit(event, id) {
-        event.stopPropagation();
-        const el = document.getElementById(id);
-        
-        if (el.innerText === DEFAULT_BOOK_TITLE || el.innerText === DEFAULT_SUB_HEADING) {
-            el.innerText = '';
-        }
-        
-        el.contentEditable = "true";
-        el.classList.remove('default-text');
-        el.focus();
-        el.style.outline = "2px dashed #3498db";
-        el.style.backgroundColor = "var(--bg)";
-        
-        el.onblur = function() {
-            el.contentEditable = "false";
-            el.style.outline = "none";
-            el.style.backgroundColor = "";
-            
-            if (el.innerText.trim() === '') {
-                if (id.includes('book-title')) el.innerText = DEFAULT_BOOK_TITLE;
-                if (id.includes('subheading-text')) el.innerText = DEFAULT_SUB_HEADING;
-                el.classList.add('default-text');
-            }
-            syncToCloud(); 
-        };
-        
-        el.onkeydown = function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) { 
-                e.preventDefault();
-                el.blur(); 
-            }
-        };
-    }
-
-    function copyText(id) {
-        const text = document.getElementById(id).innerText;
-        navigator.clipboard.writeText(text).then(() => {
-            const btn = event.target;
-            const originalText = btn.innerText;
-            btn.innerText = "✅ 已複製";
-            setTimeout(() => btn.innerText = originalText, 1500);
-        });
-    }
-
-    function toggleCollapse(exId) {
-        const bodyEl = document.getElementById(`body-${exId}`);
-        const iconEl = document.getElementById(`icon-${exId}`);
-        const bookId = parseInt(bodyEl.getAttribute('data-bookid'));
-        
-        syncCurrentState();
-        
-        bodyEl.classList.toggle('collapsed');
-        const isCollapsed = bodyEl.classList.contains('collapsed');
-        iconEl.innerText = isCollapsed ? '▶' : '▼';
-        
-        const book = db.find(b => b.id === bookId);
-        const ex = book.extractions.find(e => e.id === exId);
-        ex.isCollapsed = isCollapsed;
-        syncToCloud();
-    }
-
-    function addNewBook() {
-        syncCurrentState();
-        db.unshift({
-            id: Date.now(),
-            title: DEFAULT_BOOK_TITLE,
-            originalText: "",
-            extractions: []
-        });
-        syncToCloud();
-    }
-
-    // 🌟 新增：刪除成個 Chapter 嘅功能
-    function deleteBook(bookId) {
-        if(confirm("⚠️ 確定要刪除整個章節同埋入面所有筆記？此動作無法復原！")) {
-            syncCurrentState();
-            db = db.filter(b => b.id !== bookId);
-            initRender(); // 即時喺畫面剷走
-            syncToCloud(); // 通知雲端
-        }
-    }
-
-    function handleTxtUpload(event, bookId) {
-        const file = event.target.files[0];
-        if(!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const sourceEl = document.getElementById(`source-${bookId}`);
-            sourceEl.innerHTML = e.target.result.replace(/\n/g, '<br>');
-            syncToCloud();
-        };
-        reader.readAsText(file);
-    }
-
-    // 🌟 修正：反白並節錄文字，加入即時本地渲染
-    function extractText(bookId) {
-        const selection = window.getSelection();
-        const selectedText = selection.toString().trim();
-        if (!selectedText) { alert("⚠️ 請先在下方原文區反白選取文字！"); return; }
-
-        // 1. 喺畫面上即刻移除你反白咗嗰段字
-        const range = selection.getRangeAt(0);
-        try {
-            range.deleteContents();
-        } catch (e) {
-            console.warn("選取範圍不在可編輯區域");
-        }
-
-        // 2. 將移除咗字之後嘅「最新畫面狀態」Save 落系統
-        syncCurrentState();
-
-        // 3. 準備新嘅節錄資料
-        const book = db.find(b => b.id === bookId);
-        book.extractions.push({
-            id: Date.now(),
-            subHeading: DEFAULT_SUB_HEADING,
-            text: selectedText,
-            note: "",
-            isCollapsed: false 
-        });
-
-        selection.removeAllRanges();
-        
-        // 4. 極重要：未等 Firebase，即刻將新節錄畫出嚟，保證秒速有反應
-        renderLists(bookId);
-        
-        // 5. 最後先靜靜雞推上雲端
-        syncToCloud();
-    }
-
-    function deleteExtraction(event, bookId, exId) {
-        event.stopPropagation();
-        if(confirm("確定刪除此節錄及對應的筆記？")) {
-            syncCurrentState();
-            const book = db.find(b => b.id === bookId);
-            book.extractions = book.extractions.filter(e => e.id !== exId);
-            renderLists(bookId); // 即時本地剷走
-            syncToCloud();
-        }
-    }
-
-    function handleDragStart(e, bookId, exId) {
-        dragBookId = bookId; dragExId = exId;
-        e.dataTransfer.effectAllowed = 'move';
-        setTimeout(() => e.target.style.opacity = '0.4', 0);
-    }
-    function handleDragOver(e) { e.preventDefault(); return false; }
-    function handleDrop(e, targetBookId, targetExId) {
-        e.stopPropagation();
-        if (dragBookId !== targetBookId || dragExId === targetExId) return false;
-        syncCurrentState();
-        const book = db.find(b => b.id === dragBookId);
-        const srcIdx = book.extractions.findIndex(ex => ex.id === dragExId);
-        const tgtIdx = book.extractions.findIndex(ex => ex.id === targetExId);
-        const [movedItem] = book.extractions.splice(srcIdx, 1);
-        book.extractions.splice(tgtIdx, 0, movedItem);
-        renderLists(dragBookId); // 即時本地更新排位
-        syncToCloud();
-        return false;
-    }
-    function handleDragEnd(e) { e.target.style.opacity = '1'; }
-
-    // --- 渲染 ---
-    function initRender() {
-        const app = document.getElementById('main-app');
-        app.innerHTML = '';
-        if(db.length === 0) {
-            app.innerHTML = '<div style="text-align:center; padding: 50px; color: var(--placeholder);">請新增一個 Chapter 開始閱讀。</div>';
-            return;
-        }
-        db.forEach(book => app.appendChild(createBookElement(book)));
-    }
-
-    function renderLists(bookId) {
-        const book = db.find(b => b.id === bookId);
-        if (!book) return; // 防呆
-        const container = document.getElementById(`extractions-${bookId}`);
-        if (!container) return;
-        
-        container.innerHTML = book.extractions.map(ex => {
-            const isDefaultSub = ex.subHeading === DEFAULT_SUB_HEADING;
-            return `
-            <div class="extraction-row" draggable="true" 
-                 ondragstart="handleDragStart(event, ${bookId}, ${ex.id})" 
-                 ondragover="handleDragOver(event)" 
-                 ondrop="handleDrop(event, ${bookId}, ${ex.id})" 
-                 ondragend="handleDragEnd(event)">
-                
-                <div class="row-header" onclick="toggleCollapse(${ex.id})">
-                    <span class="drag-handle" title="按住拖曳排序">⣿</span>
-                    <span class="arrow-icon" id="icon-${ex.id}">${ex.isCollapsed ? '▶' : '▼'}</span>
-                    <span id="subheading-text-${ex.id}" class="${isDefaultSub ? 'default-text' : ''}" ondblclick="enableInlineEdit(event, 'subheading-text-${ex.id}')" style="flex-grow:1;">${ex.subHeading}</span>
-                    <button class="btn btn-danger btn-icon" onclick="deleteExtraction(event, ${bookId}, ${ex.id})">🗑️ 刪除</button>
-                </div>
-                
-                <div class="row-body ${ex.isCollapsed ? 'collapsed' : ''}" id="body-${ex.id}" data-bookid="${bookId}">
-                    
-                    <div class="left-col">
-                        <div class="col-toolbar">
-                            <span>📄 原文節錄</span>
-                            <button class="btn btn-icon" onclick="copyText('ext-text-${ex.id}')">📋 Copy</button>
-                        </div>
-                        <div class="col-content" id="ext-text-${ex.id}" ondblclick="enableInlineEdit(event, 'ext-text-${ex.id}')">${ex.text}</div>
-                    </div>
-                    
-                    <div class="right-col">
-                        <div class="col-toolbar">
-                            <span>📝 你的筆記</span>
-                            <button class="btn btn-icon" onclick="copyText('note-${ex.id}')">📋 Copy</button>
-                        </div>
-                        <div class="col-content" id="note-${ex.id}" contenteditable="true" onblur="handleContentBlur()" placeholder="在此輸入筆記...">${ex.note}</div>
-                    </div>
-                    
-                </div>
-            </div>
-            `
-        }).join('');
-    }
-
-    function createBookElement(book) {
-        const section = document.createElement('div');
-        section.className = 'book-section';
-        section.id = `book-${book.id}`;
-        
-        const isDefaultTitle = book.title === DEFAULT_BOOK_TITLE;
-
-        section.innerHTML = `
-            <div class="book-title-bar">
-                <span id="book-title-${book.id}" class="${isDefaultTitle ? 'default-text' : ''}" ondblclick="enableInlineEdit(event, 'book-title-${book.id}')" style="flex-grow: 1;">${book.title}</span>
-                <button class="btn btn-danger btn-icon" onclick="deleteBook(${book.id})">🗑️ 刪除章節</button>
-            </div>
-            
-            <div class="extractions-container" id="extractions-${book.id}">
-            </div>
-            
-            <div class="source-container">
-                <div class="source-toolbar">
-                    <span style="font-weight: bold;">⬇️ 原文區</span>
-                    <div style="display:flex; gap: 10px;">
-                        <input type="file" id="file-${book.id}" class="hidden" accept=".txt,.md" onchange="handleTxtUpload(event, ${book.id})">
-                        <button class="btn" onclick="document.getElementById('file-${book.id}').click()">📁 上傳 .txt 檔</button>
-                        <button class="btn" onclick="extractText(${book.id})" style="background-color:#004a99; color:white;">✂️ 反白並節錄文字</button>
-                    </div>
-                </div>
-                <div class="source-area" id="source-${book.id}" contenteditable="true" spellcheck="false" placeholder="請在此貼上原文..." onblur="handleContentBlur()">
-                    ${book.originalText}
-                </div>
-            </div>
-        `;
-
-        setTimeout(() => renderLists(book.id), 0);
-        return section;
-    }
+    // 初始載入
+    render();
 </script>
 
 </body>

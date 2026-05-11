@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Reading Note System (Clean UI)</title>
+    <style>
+        /* 完美修復對比度嘅配色方案 */
+        :root {
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --border: #cccccc;
+            --book-header-bg: #f0f2f5;
+            --subheading-bg: #e7f3ff;
+            --subheading-text: #004a99;
+            --note-bg: #ffffff;
+            --danger: #dc3545;
+            --success: #28a745;
+            --hover: #f9f9f9;
+            --placeholder: #888888;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #121212;
+                --text: #ffffff;  /* 確保黑夜模式係純白字 */
+                --border: #444444;
+                --book-header-bg: #1e1e1e;
+                --subheading-bg: #1a3a5a;
+                --subheading-text: #a1c9f1;
+                --note-bg: #1a1a1a; /* 右邊筆記區深色底 */
+                --danger: #ff6b6b;
+                --success: #2ea043;
+                --hover: #252525;
+                --placeholder: #aaaaaa;
+            }
+        }
+
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; margin: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
+        
+        .btn { cursor: pointer; padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--book-header-bg); color: var(--text); font-weight: bold; font-size: 0.9em; transition: 0.2s; }
+        .btn:hover { filter: brightness(0.9); }
+        .btn-danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+        .btn-success { background: var(--success); color: white; border-color: var(--success); }
+        .btn-icon { padding: 4px 8px; font-size: 0.85em; }
+
+        .book-section { border: 2px solid var(--border); border-radius: 8px; margin-bottom: 30px; overflow: hidden; background: var(--bg); }
+        .book-title-bar { background: var(--book-header-bg); padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 1.2em; font-weight: bold; }
+        
+        .extractions-container { padding: 15px; }
+        
+        .extraction-row { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 15px; overflow: hidden; background: var(--bg); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        
+        .row-header { background: var(--subheading-bg); color: var(--subheading-text); padding: 10px 15px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; border-bottom: 1px solid var(--border); }
+        .row-header:hover { filter: brightness(0.95); }
+        .drag-handle { cursor: grab; opacity: 0.5; font-size: 1.2em; }
+        .drag-handle:active { cursor: grabbing; }
+        .arrow-icon { transition: transform 0.2s; font-size: 0.8em; }
+        
+        .row-body { display: flex; transition: all 0.3s ease; }
+        .row-body.collapsed { display: none; }
+        
+        .left-col, .right-col { flex: 1; display: flex; flex-direction: column; width: 50%; }
+        .left-col { border-right: 1px solid var(--border); }
+        
+        .col-toolbar { padding: 8px 15px; background: rgba(0,0,0,0.02); border-bottom: 1px dashed var(--border); display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; font-weight: bold; color: var(--placeholder); }
+        
+        .col-content { padding: 15px; flex-grow: 1; outline: none; font-size: 0.95em; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+        .left-col .col-content { font-style: italic; opacity: 0.9; }
+        .right-col .col-content { background: var(--note-bg); }
+        .col-content:focus { background: var(--hover); }
+
+        /* Placeholder 灰底文字設定 */
+        [contenteditable="true"]:empty:before { content: attr(placeholder); color: var(--placeholder); pointer-events: none; display: block; }
+        .default-text { color: var(--placeholder); }
+
+        .source-container { padding: 20px; border-top: 3px double var(--border); background: var(--bg); }
+        .source-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: var(--book-header-bg); padding: 10px; border-radius: 6px; border: 1px solid var(--border); }
+        .source-area { outline: none; font-size: 1.05em; line-height: 1.8; min-height: 400px; padding: 10px; color: var(--text); }
+        .source-area:focus { background: var(--hover); }
+
+        .hidden { display: none; }
+        .toolbar-top { margin-bottom: 20px; display: flex; gap: 10px; background: var(--book-header-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border); }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar-top">
+        <button class="btn" onclick="addNewBook()">📚 新增 Chapter</button>
+        <div style="flex-grow: 1;"></div>
+        <input type="file" id="import-file" class="hidden" accept=".json" onchange="importJSON(event)">
+        <button class="btn" onclick="document.getElementById('import-file').click()">📥 匯入 JSON</button>
+        <button class="btn btn-success" onclick="exportJSON()">📤 匯出備份 (Save As)</button>
+    </div>
+
+    <div id="main-app"></div>
+
+<script>
+    let db = [];
+    let dragBookId = null;
+    let dragExId = null;
+
+    const DEFAULT_BOOK_TITLE = "新章節";
+    const DEFAULT_SUB_HEADING = "📌 新節錄";
+
+    // --- 升級版：自行揀 Directory Save As JSON ---
+    async function exportJSON() {
+        syncCurrentState();
+        const dataStr = JSON.stringify(db, null, 2);
+        
+        try {
+            if (window.showSaveFilePicker) {
+                // 彈出視窗俾你揀 Directory 同改名
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: `Reading_Notes_${new Date().toISOString().slice(0,10)}.json`,
+                    types: [{ description: 'JSON File', accept: {'application/json': ['.json']} }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(dataStr);
+                await writable.close();
+                alert("✅ 成功儲存！");
+            } else {
+                // 舊版瀏覽器後備方案
+                const blob = new Blob([dataStr], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Reading_Notes_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+        } catch (err) {
+            // User 自己取消唔算 Error
+            if (err.name !== 'AbortError') alert("儲存失敗: " + err.message);
+        }
+    }
+
+    function importJSON(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                db = JSON.parse(e.target.result);
+                initRender();
+            } catch (error) { alert("❌ JSON 格式錯誤。"); }
+            event.target.value = '';
+        };
+        reader.readAsText(file);
+    }
+
+    function syncCurrentState() {
+        db.forEach(book => {
+            const sourceEl = document.getElementById(`source-${book.id}`);
+            if (sourceEl) book.originalText = sourceEl.innerHTML;
+            
+            book.extractions.forEach(ex => {
+                const subEl = document.getElementById(`subheading-text-${ex.id}`);
+                if (subEl) ex.subHeading = subEl.innerText.trim() === '' ? DEFAULT_SUB_HEADING : subEl.innerText;
+                
+                const textEl = document.getElementById(`ext-text-${ex.id}`);
+                if (textEl) ex.text = textEl.innerText;
+                
+                const noteEl = document.getElementById(`note-${ex.id}`);
+                if (noteEl) ex.note = noteEl.innerText; 
+            });
+        });
+    }
+
+    // --- 升級版：原位編輯 (一 Click 自動清空預設文字) ---
+    function enableInlineEdit(event, id) {
+        event.stopPropagation();
+        const el = document.getElementById(id);
+        
+        // 如果係預設字眼，一 Click 入去即刻幫你 Delete 變吉格
+        if (el.innerText === DEFAULT_BOOK_TITLE || el.innerText === DEFAULT_SUB_HEADING) {
+            el.innerText = '';
+        }
+        
+        el.contentEditable = "true";
+        el.classList.remove('default-text');
+        el.focus();
+        el.style.outline = "2px dashed #3498db";
+        el.style.backgroundColor = "var(--bg)";
+        
+        el.onblur = function() {
+            el.contentEditable = "false";
+            el.style.outline = "none";
+            el.style.backgroundColor = "";
+            
+            // 如果你冇打字就走，自動還原預設字眼並變灰
+            if (el.innerText.trim() === '') {
+                if (id.includes('book-title')) el.innerText = DEFAULT_BOOK_TITLE;
+                if (id.includes('subheading-text')) el.innerText = DEFAULT_SUB_HEADING;
+                el.classList.add('default-text');
+            }
+            syncCurrentState();
+        };
+        
+        el.onkeydown = function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) { 
+                e.preventDefault();
+                el.blur(); 
+            }
+        };
+    }
+
+    function copyText(id) {
+        const text = document.getElementById(id).innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = "✅ 已複製";
+            setTimeout(() => btn.innerText = originalText, 1500);
+        });
+    }
+
+    function toggleCollapse(exId) {
+        const bodyEl = document.getElementById(`body-${exId}`);
+        const iconEl = document.getElementById(`icon-${exId}`);
+        const bookId = parseInt(bodyEl.getAttribute('data-bookid'));
+        
+        syncCurrentState();
+        
+        bodyEl.classList.toggle('collapsed');
+        const isCollapsed = bodyEl.classList.contains('collapsed');
+        iconEl.innerText = isCollapsed ? '▶' : '▼';
+        
+        const book = db.find(b => b.id === bookId);
+        const ex = book.extractions.find(e => e.id === exId);
+        ex.isCollapsed = isCollapsed;
+    }
+
+    function addNewBook() {
+        syncCurrentState();
+        db.unshift({
+            id: Date.now(),
+            title: DEFAULT_BOOK_TITLE,
+            originalText: "",
+            extractions: []
+        });
+        initRender();
+    }
+
+    function handleTxtUpload(event, bookId) {
+        const file = event.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const sourceEl = document.getElementById(`source-${bookId}`);
+            sourceEl.innerHTML = e.target.result.replace(/\n/g, '<br>');
+            syncCurrentState();
+        };
+        reader.readAsText(file);
+    }
+
+    function extractText(bookId) {
+        const selection = window.getSelection();
+        const selectedText = selection.toString().trim();
+        if (!selectedText) { alert("⚠️ 請先在下方反白選取文字！"); return; }
+
+        syncCurrentState();
+        const book = db.find(b => b.id === bookId);
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        book.originalText = document.getElementById(`source-${bookId}`).innerHTML;
+
+        book.extractions.push({
+            id: Date.now(),
+            subHeading: DEFAULT_SUB_HEADING,
+            text: selectedText,
+            note: "",
+            isCollapsed: false 
+        });
+
+        selection.removeAllRanges();
+        renderLists(bookId);
+    }
+
+    function deleteExtraction(event, bookId, exId) {
+        event.stopPropagation();
+        if(confirm("確定刪除此節錄及對應的筆記？")) {
+            syncCurrentState();
+            const book = db.find(b => b.id === bookId);
+            book.extractions = book.extractions.filter(e => e.id !== exId);
+            renderLists(bookId);
+        }
+    }
+
+    function handleDragStart(e, bookId, exId) {
+        dragBookId = bookId; dragExId = exId;
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(() => e.target.style.opacity = '0.4', 0);
+    }
+    function handleDragOver(e) { e.preventDefault(); return false; }
+    function handleDrop(e, targetBookId, targetExId) {
+        e.stopPropagation();
+        if (dragBookId !== targetBookId || dragExId === targetExId) return false;
+        syncCurrentState();
+        const book = db.find(b => b.id === dragBookId);
+        const srcIdx = book.extractions.findIndex(ex => ex.id === dragExId);
+        const tgtIdx = book.extractions.findIndex(ex => ex.id === targetExId);
+        const [movedItem] = book.extractions.splice(srcIdx, 1);
+        book.extractions.splice(tgtIdx, 0, movedItem);
+        renderLists(dragBookId);
+        return false;
+    }
+    function handleDragEnd(e) { e.target.style.opacity = '1'; }
+
+    function initRender() {
+        const app = document.getElementById('main-app');
+        app.innerHTML = '';
+        if(db.length === 0) {
+            app.innerHTML = '<div style="text-align:center; padding: 50px; color: gray;">請新增一個 Chapter 開始。</div>';
+            return;
+        }
+        db.forEach(book => app.appendChild(createBookElement(book)));
+    }
+
+    function renderLists(bookId) {
+        const book = db.find(b => b.id === bookId);
+        const container = document.getElementById(`extractions-${bookId}`);
+        
+        container.innerHTML = book.extractions.map(ex => {
+            const isDefaultSub = ex.subHeading === DEFAULT_SUB_HEADING;
+            return `
+            <div class="extraction-row" draggable="true" 
+                 ondragstart="handleDragStart(event, ${bookId}, ${ex.id})" 
+                 ondragover="handleDragOver(event)" 
+                 ondrop="handleDrop(event, ${bookId}, ${ex.id})" 
+                 ondragend="handleDragEnd(event)">
+                
+                <div class="row-header" onclick="toggleCollapse(${ex.id})">
+                    <span class="drag-handle" title="按住拖曳排序">⣿</span>
+                    <span class="arrow-icon" id="icon-${ex.id}">${ex.isCollapsed ? '▶' : '▼'}</span>
+                    <span id="subheading-text-${ex.id}" class="${isDefaultSub ? 'default-text' : ''}" ondblclick="enableInlineEdit(event, 'subheading-text-${ex.id}')" style="flex-grow:1;">${ex.subHeading}</span>
+                    <button class="btn btn-danger btn-icon" onclick="deleteExtraction(event, ${bookId}, ${ex.id})">🗑️ 刪除</button>
+                </div>
+                
+                <div class="row-body ${ex.isCollapsed ? 'collapsed' : ''}" id="body-${ex.id}" data-bookid="${bookId}">
+                    
+                    <div class="left-col">
+                        <div class="col-toolbar">
+                            <span>📄 原文節錄</span>
+                            <button class="btn btn-icon" onclick="copyText('ext-text-${ex.id}')">📋 Copy</button>
+                        </div>
+                        <div class="col-content" id="ext-text-${ex.id}" ondblclick="enableInlineEdit(event, 'ext-text-${ex.id}')">${ex.text}</div>
+                    </div>
+                    
+                    <div class="right-col">
+                        <div class="col-toolbar">
+                            <span>📝 你的筆記</span>
+                            <button class="btn btn-icon" onclick="copyText('note-${ex.id}')">📋 Copy</button>
+                        </div>
+                        <div class="col-content" id="note-${ex.id}" contenteditable="true" onblur="syncCurrentState()" placeholder="在此輸入筆記...">${ex.note}</div>
+                    </div>
+                    
+                </div>
+            </div>
+            `
+        }).join('');
+    }
+
+    function createBookElement(book) {
+        const section = document.createElement('div');
+        section.className = 'book-section';
+        section.id = `book-${book.id}`;
+        
+        const isDefaultTitle = book.title === DEFAULT_BOOK_TITLE;
+
+        section.innerHTML = `
+            <div class="book-title-bar">
+                <span id="book-title-${book.id}" class="${isDefaultTitle ? 'default-text' : ''}" ondblclick="enableInlineEdit(event, 'book-title-${book.id}')">${book.title}</span>
+            </div>
+            
+            <div class="extractions-container" id="extractions-${book.id}">
+            </div>
+            
+            <div class="source-container">
+                <div class="source-toolbar">
+                    <span style="font-weight: bold;">⬇️ 原文區</span>
+                    <div style="display:flex; gap: 10px;">
+                        <input type="file" id="file-${book.id}" class="hidden" accept=".txt,.md" onchange="handleTxtUpload(event, ${book.id})">
+                        <button class="btn" onclick="document.getElementById('file-${book.id}').click()">📁 上傳 .txt 檔</button>
+                        <button class="btn" onclick="extractText(${book.id})" style="background-color:#004a99; color:white;">✂️ 反白並節錄文字</button>
+                    </div>
+                </div>
+                <div class="source-area" id="source-${book.id}" contenteditable="true" spellcheck="false" placeholder="請在此貼上原文...">
+                    ${book.originalText}
+                </div>
+            </div>
+        `;
+
+        setTimeout(() => renderLists(book.id), 0);
+        return section;
+    }
+
+    initRender();
+</script>
+
+</body>
+</html>

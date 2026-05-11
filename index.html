@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Reading Note System (Clean UI)</title>
+    <title>Pro Reading Note System (Cloud Edition)</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
     <style>
         /* 完美修復對比度嘅配色方案 */
         :root {
@@ -23,12 +27,12 @@
         @media (prefers-color-scheme: dark) {
             :root {
                 --bg: #121212;
-                --text: #ffffff;  /* 確保黑夜模式係純白字 */
+                --text: #ffffff;
                 --border: #444444;
                 --book-header-bg: #1e1e1e;
                 --subheading-bg: #1a3a5a;
                 --subheading-text: #a1c9f1;
-                --note-bg: #1a1a1a; /* 右邊筆記區深色底 */
+                --note-bg: #1a1a1a;
                 --danger: #ff6b6b;
                 --success: #2ea043;
                 --hover: #252525;
@@ -43,6 +47,15 @@
         .btn-danger { color: var(--danger); border-color: var(--danger); background: transparent; }
         .btn-success { background: var(--success); color: white; border-color: var(--success); }
         .btn-icon { padding: 4px 8px; font-size: 0.85em; }
+
+        /* Firebase Setup 專用 CSS */
+        #setup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .setup-box { background: var(--bg); color: var(--text); padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .setup-box h2 { margin-top: 0; color: var(--subheading-text); }
+        .setup-box input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid var(--border); border-radius: 5px; box-sizing: border-box; background: var(--note-bg); color: var(--text); }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+        .online { background-color: var(--success); box-shadow: 0 0 5px var(--success); }
+        #cloud-status { display: flex; align-items: center; font-size: 0.9em; font-weight: bold; color: var(--success); }
 
         .book-section { border: 2px solid var(--border); border-radius: 8px; margin-bottom: 30px; overflow: hidden; background: var(--bg); }
         .book-title-bar { background: var(--book-header-bg); padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 1.2em; font-weight: bold; }
@@ -70,7 +83,6 @@
         .right-col .col-content { background: var(--note-bg); }
         .col-content:focus { background: var(--hover); }
 
-        /* Placeholder 灰底文字設定 */
         [contenteditable="true"]:empty:before { content: attr(placeholder); color: var(--placeholder); pointer-events: none; display: block; }
         .default-text { color: var(--placeholder); }
 
@@ -79,38 +91,128 @@
         .source-area { outline: none; font-size: 1.05em; line-height: 1.8; min-height: 400px; padding: 10px; color: var(--text); }
         .source-area:focus { background: var(--hover); }
 
-        .hidden { display: none; }
-        .toolbar-top { margin-bottom: 20px; display: flex; gap: 10px; background: var(--book-header-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border); }
+        .hidden { display: none !important; }
+        .toolbar-top { margin-bottom: 20px; display: flex; gap: 10px; background: var(--book-header-bg); padding: 15px; border-radius: 8px; border: 1px solid var(--border); align-items: center; }
     </style>
 </head>
 <body>
 
+    <div id="setup-overlay">
+        <div class="setup-box">
+            <h2>🔐 首次雲端設定 (Reading Notes)</h2>
+            <p style="font-size: 0.85em; color: var(--placeholder);">請填入 Firebase Project Settings 中的資料：</p>
+            <input type="text" id="conf-apiKey" placeholder="apiKey">
+            <input type="text" id="conf-databaseURL" placeholder="databaseURL (例如 https://...)">
+            <input type="text" id="conf-projectId" placeholder="projectId">
+            <input type="password" id="conf-secretKey" placeholder="自訂私隱密碼 (用嚟鎖住你嘅專屬數據)">
+            <button class="btn-success" style="width: 100%; margin-top: 15px; padding: 10px;" onclick="saveConfig()">🚀 開始同步數據</button>
+            <p style="font-size: 0.75em; color: var(--placeholder); margin-top: 10px;">* 資料會儲存在此瀏覽器，只需輸入一次。</p>
+        </div>
+    </div>
+
     <div class="toolbar-top">
         <button class="btn" onclick="addNewBook()">📚 新增 Chapter</button>
         <div style="flex-grow: 1;"></div>
-        <input type="file" id="import-file" class="hidden" accept=".json" onchange="importJSON(event)">
-        <button class="btn" onclick="document.getElementById('import-file').click()">📥 匯入 JSON</button>
+        
+        <div id="cloud-status" class="hidden">
+            <span class="status-dot online"></span> 雲端同步中
+        </div>
+        
+        <div style="width: 15px;"></div> <input type="file" id="import-file" class="hidden" accept=".json" onchange="importJSON(event)">
+        <button class="btn" onclick="document.getElementById('import-file').click()" title="由 JSON 覆蓋目前進度">📥 匯入取代</button>
         <button class="btn btn-success" onclick="exportJSON()">📤 匯出備份 (Save As)</button>
+        <button class="btn" onclick="clearConfig()" style="background-color: var(--danger); color: white; border-color: var(--danger);">⚙️ 重設雲端</button>
     </div>
 
     <div id="main-app"></div>
 
 <script>
+    // --- 核心變數與 Firebase 設定 ---
     let db = [];
     let dragBookId = null;
     let dragExId = null;
 
+    // 故意用 fb_config_reading，避免同你之前個 Prompt DB 撞 Key 導致 Bug
+    let firebaseConfig = JSON.parse(localStorage.getItem('fb_config_reading'));
+    let secretPath = localStorage.getItem('fb_secret_reading') || "default";
+    let fbDB;
+
     const DEFAULT_BOOK_TITLE = "新章節";
     const DEFAULT_SUB_HEADING = "📌 新節錄";
 
-    // --- 升級版：自行揀 Directory Save As JSON ---
+    // --- 初始化 ---
+    window.onload = function() {
+        if (!firebaseConfig) {
+            document.getElementById('setup-overlay').style.display = 'flex';
+            initRender(); 
+        } else {
+            document.getElementById('cloud-status').classList.remove('hidden');
+            initFirebase();
+        }
+    };
+
+    function saveConfig() {
+        const config = {
+            apiKey: document.getElementById('conf-apiKey').value.trim(),
+            databaseURL: document.getElementById('conf-databaseURL').value.trim(),
+            projectId: document.getElementById('conf-projectId').value.trim(),
+        };
+        const secret = document.getElementById('conf-secretKey').value.trim() || "my_secret_reading";
+        localStorage.setItem('fb_config_reading', JSON.stringify(config));
+        localStorage.setItem('fb_secret_reading', secret);
+        location.reload();
+    }
+
+    function clearConfig() {
+        if(confirm("確定要重設雲端連線資料？(唔會刪除你嘅筆記，只係登出雲端)")) {
+            localStorage.removeItem('fb_config_reading');
+            localStorage.removeItem('fb_secret_reading');
+            location.reload();
+        }
+    }
+
+    // --- Firebase 雲端同步邏輯 ---
+    function initFirebase() {
+        firebase.initializeApp(firebaseConfig);
+        fbDB = firebase.database();
+        let isFirstLoad = true;
+        
+        // 監聽 Firebase 變化
+        fbDB.ref('reading_notes/' + secretPath).on('value', (snapshot) => {
+            const data = snapshot.val();
+            
+            if (isFirstLoad && !data && db.length > 0) {
+                syncToCloud(); // 如果雲端吉，但本地有嘢，推上去
+                isFirstLoad = false;
+                return;
+            }
+            isFirstLoad = false;
+
+            if (data) {
+                db = data.database || [];
+            } else {
+                db = [];
+            }
+            initRender();
+        });
+    }
+
+    // 將資料推上雲端 (所有動作完結後 Call 呢個)
+    function syncToCloud() {
+        syncCurrentState();
+        if (fbDB) {
+            fbDB.ref('reading_notes/' + secretPath).set({
+                database: db
+            });
+        }
+    }
+
+    // --- JSON 匯入與匯出 (保留作備份用) ---
     async function exportJSON() {
         syncCurrentState();
         const dataStr = JSON.stringify(db, null, 2);
-        
         try {
             if (window.showSaveFilePicker) {
-                // 彈出視窗俾你揀 Directory 同改名
                 const handle = await window.showSaveFilePicker({
                     suggestedName: `Reading_Notes_${new Date().toISOString().slice(0,10)}.json`,
                     types: [{ description: 'JSON File', accept: {'application/json': ['.json']} }]
@@ -118,9 +220,8 @@
                 const writable = await handle.createWritable();
                 await writable.write(dataStr);
                 await writable.close();
-                alert("✅ 成功儲存！");
+                alert("✅ 成功儲存備份！");
             } else {
-                // 舊版瀏覽器後備方案
                 const blob = new Blob([dataStr], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -130,7 +231,6 @@
                 URL.revokeObjectURL(url);
             }
         } catch (err) {
-            // User 自己取消唔算 Error
             if (err.name !== 'AbortError') alert("儲存失敗: " + err.message);
         }
     }
@@ -142,13 +242,15 @@
         reader.onload = (e) => {
             try {
                 db = JSON.parse(e.target.result);
-                initRender();
+                syncToCloud(); // 匯入後即刻上雲端
+                alert("✅ 成功匯入並同步至雲端！");
             } catch (error) { alert("❌ JSON 格式錯誤。"); }
             event.target.value = '';
         };
         reader.readAsText(file);
     }
 
+    // 將畫面上打緊嘅字同步落 variable
     function syncCurrentState() {
         db.forEach(book => {
             const sourceEl = document.getElementById(`source-${book.id}`);
@@ -167,12 +269,15 @@
         });
     }
 
-    // --- 升級版：原位編輯 (一 Click 自動清空預設文字) ---
+    // --- 打字/編輯結束時觸發雲端儲存 ---
+    function handleContentBlur() {
+        syncToCloud(); 
+    }
+
     function enableInlineEdit(event, id) {
         event.stopPropagation();
         const el = document.getElementById(id);
         
-        // 如果係預設字眼，一 Click 入去即刻幫你 Delete 變吉格
         if (el.innerText === DEFAULT_BOOK_TITLE || el.innerText === DEFAULT_SUB_HEADING) {
             el.innerText = '';
         }
@@ -188,13 +293,12 @@
             el.style.outline = "none";
             el.style.backgroundColor = "";
             
-            // 如果你冇打字就走，自動還原預設字眼並變灰
             if (el.innerText.trim() === '') {
                 if (id.includes('book-title')) el.innerText = DEFAULT_BOOK_TITLE;
                 if (id.includes('subheading-text')) el.innerText = DEFAULT_SUB_HEADING;
                 el.classList.add('default-text');
             }
-            syncCurrentState();
+            syncToCloud(); // 改完即刻推上雲
         };
         
         el.onkeydown = function(e) {
@@ -229,6 +333,7 @@
         const book = db.find(b => b.id === bookId);
         const ex = book.extractions.find(e => e.id === exId);
         ex.isCollapsed = isCollapsed;
+        syncToCloud();
     }
 
     function addNewBook() {
@@ -239,7 +344,7 @@
             originalText: "",
             extractions: []
         });
-        initRender();
+        syncToCloud();
     }
 
     function handleTxtUpload(event, bookId) {
@@ -249,7 +354,7 @@
         reader.onload = (e) => {
             const sourceEl = document.getElementById(`source-${bookId}`);
             sourceEl.innerHTML = e.target.result.replace(/\n/g, '<br>');
-            syncCurrentState();
+            syncToCloud();
         };
         reader.readAsText(file);
     }
@@ -274,7 +379,7 @@
         });
 
         selection.removeAllRanges();
-        renderLists(bookId);
+        syncToCloud();
     }
 
     function deleteExtraction(event, bookId, exId) {
@@ -283,7 +388,7 @@
             syncCurrentState();
             const book = db.find(b => b.id === bookId);
             book.extractions = book.extractions.filter(e => e.id !== exId);
-            renderLists(bookId);
+            syncToCloud();
         }
     }
 
@@ -302,16 +407,17 @@
         const tgtIdx = book.extractions.findIndex(ex => ex.id === targetExId);
         const [movedItem] = book.extractions.splice(srcIdx, 1);
         book.extractions.splice(tgtIdx, 0, movedItem);
-        renderLists(dragBookId);
+        syncToCloud();
         return false;
     }
     function handleDragEnd(e) { e.target.style.opacity = '1'; }
 
+    // --- 渲染 ---
     function initRender() {
         const app = document.getElementById('main-app');
         app.innerHTML = '';
         if(db.length === 0) {
-            app.innerHTML = '<div style="text-align:center; padding: 50px; color: gray;">請新增一個 Chapter 開始。</div>';
+            app.innerHTML = '<div style="text-align:center; padding: 50px; color: var(--placeholder);">請新增一個 Chapter 開始閱讀。</div>';
             return;
         }
         db.forEach(book => app.appendChild(createBookElement(book)));
@@ -352,7 +458,7 @@
                             <span>📝 你的筆記</span>
                             <button class="btn btn-icon" onclick="copyText('note-${ex.id}')">📋 Copy</button>
                         </div>
-                        <div class="col-content" id="note-${ex.id}" contenteditable="true" onblur="syncCurrentState()" placeholder="在此輸入筆記...">${ex.note}</div>
+                        <div class="col-content" id="note-${ex.id}" contenteditable="true" onblur="handleContentBlur()" placeholder="在此輸入筆記...">${ex.note}</div>
                     </div>
                     
                 </div>
@@ -385,7 +491,7 @@
                         <button class="btn" onclick="extractText(${book.id})" style="background-color:#004a99; color:white;">✂️ 反白並節錄文字</button>
                     </div>
                 </div>
-                <div class="source-area" id="source-${book.id}" contenteditable="true" spellcheck="false" placeholder="請在此貼上原文...">
+                <div class="source-area" id="source-${book.id}" contenteditable="true" spellcheck="false" placeholder="請在此貼上原文..." onblur="handleContentBlur()">
                     ${book.originalText}
                 </div>
             </div>
@@ -394,8 +500,6 @@
         setTimeout(() => renderLists(book.id), 0);
         return section;
     }
-
-    initRender();
 </script>
 
 </body>

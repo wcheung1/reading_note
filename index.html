@@ -137,9 +137,8 @@
     let secretPath = localStorage.getItem('fb_notes_secret') || "default";
     let books = JSON.parse(localStorage.getItem('myReadingNotes')) || [];
     let dragData = null;
-    let isEditing = false; // 防止 Firebase 刷新打斷打字
+    let isEditing = false; 
 
-    // --- 初始化 ---
     window.onload = function() {
         if (!firebaseConfig) {
             document.getElementById('setup-overlay').style.display = 'flex';
@@ -150,7 +149,6 @@
         }
     };
 
-    // --- Firebase 雲端連線邏輯 ---
     function saveConfig() {
         const config = {
             apiKey: document.getElementById('conf-apiKey').value,
@@ -176,9 +174,8 @@
         db = firebase.database();
         let isFirstLoad = true;
         
-        // 【修改點 1】：路徑最後面加返 '/books'，確保淨係讀取陣列
         db.ref('reading_notes/' + secretPath + '/books').on('value', (snapshot) => {
-            if (isEditing) return; // 如果打緊字，唔好重新 render 打斷自己
+            if (isEditing) return; 
             
             const data = snapshot.val();
             
@@ -189,7 +186,14 @@
             }
             isFirstLoad = false;
 
-            books = data || [];
+            // 【修復殺手 1】：破解 Firebase 陣列變形陷阱！
+            if (data) {
+                // 如果 Firebase 傳返嚟嘅係 Object，我哋強制轉返做 Array
+                books = Array.isArray(data) ? data : Object.values(data);
+                books = books.filter(b => b !== null); // 清走可能存在嘅垃圾 null
+            } else {
+                books = [];
+            }
             
             books.forEach(b => { if(!b.extracts) b.extracts = []; });
 
@@ -200,7 +204,6 @@
 
     function syncToCloud() {
         if (db) {
-            // 【修改點 2】：路徑最後面加返 '/books'，直接將陣列推上去
             db.ref('reading_notes/' + secretPath + '/books').set(books);
         }
     }
@@ -223,7 +226,6 @@
             const bookEl = document.createElement('div');
             bookEl.className = `book-card ${book.collapsed ? 'collapsed' : ''}`;
             
-            // Book Header (加入 Draggable)
             let headerHTML = `
                 <div class="book-header" draggable="true" ondragstart="dragStart(event, 'book', ${bIndex})" ondragover="dragOver(event)" ondrop="drop(event, 'book', ${bIndex})" onclick="toggleBook(${book.id}, event)">
                     <span class="arrow-icon">▼</span>
@@ -240,7 +242,6 @@
                     <div id="extracts-container-${book.id}">
             `;
             
-            // Extracts (加入 Draggable)
             book.extracts.forEach((ext, eIndex) => {
                 headerHTML += `
                     <div class="extract-wrapper ${ext.collapsed ? 'collapsed-extract' : ''}">
@@ -275,9 +276,8 @@
                 `;
             });
 
-            headerHTML += `</div>`; // End extracts container
+            headerHTML += `</div>`;
 
-            // Original Text Section 
             headerHTML += `
                     <div class="original-text-section">
                         <div class="original-header" onclick="toggleOriginalText(${book.id})">
@@ -298,7 +298,6 @@
             bookEl.innerHTML = headerHTML;
             container.appendChild(bookEl);
 
-            // Auto-focus logic
             if (book.isEditingTitle) {
                 const input = document.getElementById(`book-title-${book.id}`);
                 if(input) { input.focus(); input.select(); }
@@ -316,7 +315,7 @@
     function addBook() {
         const newId = Date.now();
         books.unshift({ id: newId, title: "", originalText: "", collapsed: false, origCollapsed: false, isEditingTitle: true, extracts: [] });
-        saveData(); // Save trigger re-render
+        saveData(); 
     }
     function deleteBook(id, e) {
         e.stopPropagation();
@@ -335,17 +334,21 @@
         e.stopPropagation();
         const book = books.find(b => b.id === id);
         book.isEditingTitle = true;
-        render(); // Local UI change
+        render(); 
     }
+    
+    // 【修復殺手 2】：加入 setTimeout 子彈時間，防止失焦破壞掣嘅點擊！
     function saveBookTitle(id) {
-        isEditing = false;
-        const book = books.find(b => b.id === id);
-        const input = document.getElementById(`book-title-${id}`);
-        if(input) {
-            book.title = input.value;
-            book.isEditingTitle = false;
-            saveData();
-        }
+        setTimeout(() => {
+            isEditing = false;
+            const book = books.find(b => b.id === id);
+            const input = document.getElementById(`book-title-${id}`);
+            if(input) {
+                book.title = input.value;
+                book.isEditingTitle = false;
+                saveData();
+            }
+        }, 200);
     }
 
     // --- 節錄操作 ---
@@ -374,7 +377,6 @@
             collapsed: false,
             isEditingTitle: true
         });
-        
         saveData();
     }
 
@@ -401,32 +403,35 @@
         render();
     }
     function saveExtTitle(bookId, extId) {
-        isEditing = false;
-        const book = books.find(b => b.id === bookId);
-        const ext = book.extracts.find(x => x.id === extId);
-        const input = document.getElementById(`ext-title-${extId}`);
-        if(input) {
-            ext.subheading = input.value;
-            ext.isEditingTitle = false;
-            saveData();
-        }
+        setTimeout(() => {
+            isEditing = false;
+            const book = books.find(b => b.id === bookId);
+            const ext = book.extracts.find(x => x.id === extId);
+            const input = document.getElementById(`ext-title-${extId}`);
+            if(input) {
+                ext.subheading = input.value;
+                ext.isEditingTitle = false;
+                saveData();
+            }
+        }, 200);
     }
 
-    // --- 內容編輯 (ContentEditable) ---
+    // --- 內容編輯 ---
     function enableEdit(el) {
         isEditing = true;
         el.contentEditable = "true";
         el.focus();
     }
     function saveTextEdit(el, bookId, extId, type) {
-        isEditing = false;
-        el.contentEditable = "false";
-        const book = books.find(b => b.id === bookId);
-        const ext = book.extracts.find(x => x.id === extId);
-        if (type === 'extract') ext.extract = el.innerText;
-        if (type === 'note') ext.note = el.innerText;
-        
-        saveData(); 
+        setTimeout(() => {
+            isEditing = false;
+            el.contentEditable = "false";
+            const book = books.find(b => b.id === bookId);
+            const ext = book.extracts.find(x => x.id === extId);
+            if (type === 'extract') ext.extract = el.innerText;
+            if (type === 'note') ext.note = el.innerText;
+            saveData(); 
+        }, 200);
     }
 
     // --- 原文區域操作 ---
@@ -436,11 +441,13 @@
         saveData();
     }
     function saveOriginalText(bookId) {
-        isEditing = false;
-        const book = books.find(b => b.id === bookId);
-        const textarea = document.getElementById(`orig-textarea-${bookId}`);
-        if(textarea) book.originalText = textarea.value;
-        saveData();
+        setTimeout(() => {
+            isEditing = false;
+            const book = books.find(b => b.id === bookId);
+            const textarea = document.getElementById(`orig-textarea-${bookId}`);
+            if(textarea) book.originalText = textarea.value;
+            saveData();
+        }, 200);
     }
     function handleFileUpload(bookId, event) {
         const file = event.target.files[0];
@@ -456,7 +463,7 @@
         event.target.value = '';
     }
 
-    // --- 拖曳排序 (Drag & Drop) 支援書本與節錄 ---
+    // --- 拖曳排序 ---
     function dragStart(e, type, bIndex, eIndex = null) {
         if(e.target.tagName === 'INPUT') { e.preventDefault(); return; }
         dragData = { type, bIndex, eIndex };
@@ -469,12 +476,10 @@
         if(!dragData || dragData.type !== targetType) return; 
         
         if (targetType === 'book' && dragData.bIndex !== targetBIndex) {
-            // 書本重新排位
             const item = books.splice(dragData.bIndex, 1)[0];
             books.splice(targetBIndex, 0, item);
             saveData();
         } else if (targetType === 'extract' && dragData.bIndex === targetBIndex && dragData.eIndex !== targetEIndex) {
-            // 同一本書內嘅節錄重新排位
             const book = books[targetBIndex];
             const item = book.extracts.splice(dragData.eIndex, 1)[0];
             book.extracts.splice(targetEIndex, 0, item);
@@ -492,7 +497,6 @@
         });
     }
 
-    // --- 本地 JSON 備份 (作為 Firebase 以外嘅定海神針) ---
     async function exportJSON() {
         if (books.length === 0) { alert("無內容可以匯出！"); return; }
         document.querySelectorAll('textarea').forEach(el => el.blur());
@@ -523,7 +527,7 @@
         reader.onload = function(e) {
             try {
                 books = JSON.parse(e.target.result);
-                saveData(); // 匯入後自動 Push 上 Firebase
+                saveData(); 
                 alert("✅ 成功匯入並同步至雲端！");
             } catch (error) { alert("❌ 檔案格式出錯！"); }
         };
@@ -531,7 +535,6 @@
         event.target.value = '';
     }
 
-    // 初始載入
     render();
 </script>
 

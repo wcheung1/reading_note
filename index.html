@@ -253,6 +253,13 @@
     // 將畫面上打緊嘅字同步落 variable
     function syncCurrentState() {
         db.forEach(book => {
+            // 👇 呢度就係漏咗嘅「同步書本標題」功能！
+            const titleEl = document.getElementById(`book-title-${book.id}`);
+            if (titleEl) {
+                book.title = titleEl.innerText.trim() === '' ? DEFAULT_BOOK_TITLE : titleEl.innerText;
+            }
+            // 👆 新增完畢
+
             const sourceEl = document.getElementById(`source-${book.id}`);
             if (sourceEl) book.originalText = sourceEl.innerHTML;
             

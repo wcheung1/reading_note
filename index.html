@@ -784,7 +784,8 @@
     // ===== Book editor 渲染函數 =====
     function renderOriginalSection(section, bookId, text) {
         const ui = getBookUIState(bookId);
-        const collapsed = !!ui.origCollapsed;
+        // UX 微調：預設摺疊。只有明確儲存過 false（展開）先展開；undefined/true 都視為摺疊。
+        const collapsed = ui.origCollapsed !== false;
         section.innerHTML = '';
 
         const header = document.createElement('div');
@@ -815,7 +816,9 @@
 
         header.onclick = function () {
             const st = getBookUIState(bookId);
-            st.origCollapsed = !st.origCollapsed;
+            // 基於目前 computed 狀態反轉（唔直接 !raw，避免 undefined 預設語義錯亂）
+            const currentCollapsed = st.origCollapsed !== false;
+            st.origCollapsed = !currentCollapsed;
             setBookUIState(bookId, st);
             renderOriginalSection(section, bookId, text);
         };
@@ -854,7 +857,9 @@
     function renderNoteCard(bookId, doc, index) {
         const note = doc.data();
         const ui = getBookUIState(bookId);
-        const collapsed = !!(ui.notes && ui.notes[doc.id] && ui.notes[doc.id].collapsed);
+        // UX 微調：預設摺疊。只有明確儲存過 false（展開）先展開；undefined/true 都視為摺疊。
+        const noteState = (ui.notes && ui.notes[doc.id]) ? ui.notes[doc.id] : {};
+        const collapsed = noteState.collapsed !== false;
 
         const card = document.createElement('div');
         card.className = 'ext-card';
@@ -936,7 +941,9 @@
         const st = getBookUIState(bookId);
         if (!st.notes) st.notes = {};
         if (!st.notes[noteId]) st.notes[noteId] = {};
-        st.notes[noteId].collapsed = !st.notes[noteId].collapsed;
+        // 基於目前 computed 狀態反轉（唔直接 !raw，避免 undefined 預設語義錯亂）
+        const currentCollapsed = st.notes[noteId].collapsed !== false;
+        st.notes[noteId].collapsed = !currentCollapsed;
         setBookUIState(bookId, st);
         renderNotesList(document.getElementById('notes-container'), bookId);
     }

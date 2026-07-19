@@ -2,215 +2,1965 @@
 <html lang="zh-HK">
 <head>
     <meta charset="UTF-8">
-    <title>我的雲端書櫃 (Master Page)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深度閱讀筆記系統 (Phase 2 SPA)</title>
+
+    <!-- Firebase v9 compat：app + auth + firestore -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
     <style>
-        :root { --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; --primary: #3498db; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 20px 40px; text-align: center; }
-        .shelf-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 30px; }
-        
-        .book-btn { background: var(--card); border: 2px solid #333; padding: 30px 20px; border-radius: 10px; cursor: grab; color: var(--text); font-size: 1.1em; transition: transform 0.2s, border-color 0.2s; position: relative; }
-        .book-btn:active { cursor: grabbing; }
-        .book-btn:hover { border-color: var(--primary); transform: translateY(-5px); }
-        .book-btn.dragging { opacity: 0.5; border: 2px dashed var(--primary); }
-        
-        .controls { background: #1e1e1e; padding: 20px; border-radius: 10px; border: 1px solid #333; margin-bottom: 20px; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto; }
-        input { background: #2a2a2a; color: white; border: 1px solid #444; padding: 10px; margin: 5px 0; border-radius: 5px; width: calc(100% - 22px); box-sizing: border-box; }
-        textarea { background: #2a2a2a; color: #a8e6cf; border: 1px solid #444; padding: 10px; margin: 5px 0; border-radius: 5px; width: 100%; box-sizing: border-box; font-family: monospace; font-size: 0.9em; resize: vertical; }
-        button { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 1em; margin-top: 5px; width: 100%; box-sizing: border-box; }
-        button:hover { opacity: 0.8; }
-        
-        .delete-btn { position: absolute; top: 5px; right: 5px; background: #e74c3c; color: white; border: none; border-radius: 3px; padding: 2px 5px; font-size: 0.7em; cursor: pointer; display: none; width: auto; }
-        .book-btn:hover .delete-btn { display: block; }
-        .flex-btns { display: flex; gap: 10px; }
-        .flex-btns button { width: auto; flex: 1; }
+        /* === 日夜模式自動切換 (High Contrast，沿用 Phase 1 配色) === */
+        :root {
+            --bg-page: #f4f6f9;
+            --bg-card: #ffffff;
+            --bg-box: #ffffff;
+            --text-main: #2c3e50;
+            --text-muted: #7f8c8d;
+            --border-color: #bdc3c7;
+            --border-focus: #3498db;
+            --primary-color: #3498db;
+            --danger-color: #e74c3c;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --header-bg: #e8f4fd;
+            --hover-bg: #ecf0f1;
+            --overlay-bg: rgba(0,0,0,0.85);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-page: #121212;
+                --bg-card: #1e1e1e;
+                --bg-box: #2a2a2a;
+                --text-main: #e0e0e0;
+                --text-muted: #a0a0a0;
+                --border-color: #555555;
+                --border-focus: #64b5f6;
+                --primary-color: #2980b9;
+                --danger-color: #c0392b;
+                --success-color: #27ae60;
+                --warning-color: #d68910;
+                --header-bg: #2c3e50;
+                --hover-bg: #3d3d3d;
+            }
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-main);
+            margin: 0; padding: 0; line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* === Header === */
+        .app-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 24px; background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .brand { font-size: 1.25em; font-weight: bold; }
+        .header-right { display: flex; align-items: center; gap: 10px; }
+        #user-chip {
+            display: flex; align-items: center; gap: 10px;
+            background: var(--bg-box); padding: 6px 12px;
+            border-radius: 20px; border: 1px solid var(--border-color); font-size: 0.9em;
+        }
+        .btn-icon {
+            background: transparent; color: var(--text-muted);
+            border: 1px solid var(--border-color); padding: 4px 10px;
+            border-radius: 4px; cursor: pointer; font-size: 0.85em;
+        }
+        .btn-icon:hover { color: var(--danger-color); border-color: var(--danger-color); }
+
+        /* === Main view === */
+        main#view-root { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+        .view-header {
+            display: flex; align-items: center; gap: 14px;
+            margin-bottom: 20px; flex-wrap: wrap;
+        }
+        .view-header h2 { margin: 0; }
+        .btn-back {
+            background: var(--bg-card); color: var(--text-main);
+            border: 1px solid var(--border-color); padding: 8px 14px;
+            border-radius: 6px; cursor: pointer; font-size: 0.9em;
+        }
+        .btn-back:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+        .badge-stage {
+            font-size: 0.75em; color: var(--text-muted);
+            background: var(--bg-box); padding: 4px 10px;
+            border-radius: 12px; border: 1px solid var(--border-color);
+        }
+
+        .card {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 10px; padding: 20px; margin-bottom: 16px;
+        }
+        .card.placeholder { text-align: center; padding: 48px 20px; }
+        .card.placeholder .muted { color: var(--text-muted); }
+
+        /* === Shelf (Stage B：書單 CRUD) === */
+        .add-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .add-input {
+            flex: 1; min-width: 200px; padding: 10px 12px;
+            background: var(--bg-box); color: var(--text-main);
+            border: 1px solid var(--border-color); border-radius: 6px; font-size: 1em;
+        }
+        .add-input:focus { outline: none; border-color: var(--border-focus); }
+        .btn-primary {
+            padding: 10px 16px; background: var(--primary-color); color: #fff;
+            border: none; border-radius: 6px; cursor: pointer;
+            font-weight: bold; font-size: 0.95em;
+        }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { background: var(--text-muted); color: #fff; }
+        .btn-danger { background: var(--danger-color); color: #fff; }
+
+        .shelf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+        .book-card {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 10px; padding: 18px;
+            display: flex; flex-direction: column; gap: 14px;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .book-card:hover { border-color: var(--primary-color); transform: translateY(-2px); }
+        .book-card .book-title {
+            font-size: 1.15em; font-weight: bold; cursor: pointer;
+            min-height: 1.4em; word-break: break-word; line-height: 1.4;
+        }
+        .book-card .book-title:hover { color: var(--primary-color); }
+        .book-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+        .btn-mini {
+            padding: 5px 10px; font-size: 0.8em; border: none; border-radius: 5px;
+            cursor: pointer; color: #fff; font-weight: bold;
+        }
+        .btn-mini:disabled { opacity: 0.35; cursor: not-allowed; }
+        .btn-mini.btn-secondary { background: var(--text-muted); }
+        .btn-mini.btn-secondary:hover:not(:disabled) { opacity: 0.85; }
+        .btn-mini.btn-danger { background: var(--danger-color); }
+        .btn-mini.btn-danger:hover { opacity: 0.9; }
+        .muted { color: var(--text-muted); }
+
+        /* === Book Editor (Stage C：筆記編輯) === */
+        .book-title-display {
+            font-size: 1.5em; font-weight: bold; cursor: pointer;
+            padding: 4px 10px; border-radius: 6px; border: 2px dashed transparent;
+            word-break: break-word; display: inline-block; min-width: 80px; margin-bottom: 16px;
+        }
+        .book-title-display:hover { border-color: var(--border-focus); }
+        .book-title-display.editing { display: none; }
+        .book-title-input {
+            font-size: 1.5em; font-weight: bold; padding: 4px 10px; margin-bottom: 16px;
+            border: 2px dashed var(--border-focus); border-radius: 6px;
+            background: transparent; color: var(--text-main); outline: none; min-width: 300px;
+            font-family: inherit;
+        }
+
+        .orig-section {
+            border: 1px dashed var(--border-color); border-radius: 8px;
+            padding: 16px; background: var(--bg-box); margin-bottom: 20px;
+        }
+        .orig-header {
+            display: flex; justify-content: space-between; align-items: center;
+            cursor: pointer; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+        }
+        .orig-arrow { transition: transform 0.2s; display: inline-block; }
+        .orig-arrow.collapsed { transform: rotate(-90deg); }
+        .orig-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .orig-textarea {
+            width: 100%; min-height: 300px; padding: 12px;
+            border: 2px solid var(--border-color); border-radius: 6px;
+            background: var(--bg-page); color: var(--text-main);
+            font-family: inherit; font-size: 1em; resize: vertical; box-sizing: border-box; line-height: 1.7;
+        }
+        .orig-textarea::selection { background: var(--border-focus); color: white; }
+
+        .ext-card {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 8px; margin-bottom: 16px; overflow: hidden;
+        }
+        .ext-header {
+            background: var(--header-bg); padding: 10px 14px;
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .ext-arrow { transition: transform 0.2s; display: inline-block; cursor: pointer; padding: 0 4px; }
+        .ext-arrow.collapsed { transform: rotate(-90deg); }
+        .ext-subheading {
+            flex-grow: 1; font-weight: bold; font-size: 1.05em; cursor: pointer;
+            word-break: break-word; min-width: 120px;
+        }
+        .ext-subheading-input {
+            flex-grow: 1; font-weight: bold; font-size: 1.05em;
+            border: 2px dashed var(--border-focus); border-radius: 4px;
+            background: transparent; color: var(--text-main); outline: none; padding: 2px 6px; font-family: inherit;
+        }
+        .ext-body { display: flex; gap: 0; align-items: stretch; }
+        .ext-body.collapsed { display: none; }
+        .ext-pane { flex: 1; display: flex; flex-direction: column; padding: 14px; min-width: 0; }
+        .ext-pane-left { border-right: 1px solid var(--border-color); }
+        .ext-pane-header {
+            font-size: 0.82em; color: var(--text-muted); margin-bottom: 8px;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;
+        }
+        .ext-text-box {
+            flex-grow: 1; border: 2px solid var(--border-color); border-radius: 6px;
+            background: var(--bg-box); padding: 12px; min-height: 120px;
+            white-space: pre-wrap; word-wrap: break-word; outline: none;
+            transition: border-color 0.2s; line-height: 1.6;
+        }
+        .ext-text-box[contenteditable="true"] { border-color: var(--border-focus); background: var(--bg-page); cursor: text; }
+        .ext-text-box.editable { cursor: pointer; }
+        .ext-text-box.editable:hover { border-color: var(--text-muted); }
+        .ext-empty { text-align: center; padding: 32px 16px; color: var(--text-muted); line-height: 2; }
+        @media (max-width: 768px) {
+            .ext-body { flex-direction: column; }
+            .ext-pane-left { border-right: none; border-bottom: 1px solid var(--border-color); }
+        }
+
+        /* === Login card === */
+        .center-card {
+            max-width: 460px; margin: 80px auto;
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 12px; padding: 32px; text-align: center;
+        }
+        .center-card h2 { margin-top: 0; }
+        .center-card .muted { color: var(--text-muted); }
+        .center-card .small { font-size: 0.78em; }
+        .btn-google {
+            width: 100%; padding: 12px; background: #fff; color: #2c3e50;
+            border: 1px solid #bdc3c7; border-radius: 6px; cursor: pointer;
+            font-size: 1em; font-weight: bold; margin: 14px 0;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .btn-google:hover { background: #f7f7f7; }
+        @media (prefers-color-scheme: dark) {
+            .btn-google { background: var(--bg-box); color: var(--text-main); border-color: var(--border-color); }
+            .btn-google:hover { background: var(--hover-bg); }
+        }
+
+        /* === Setup Overlay (Firebase Config) === */
+        #setup-overlay {
+            position: fixed; inset: 0; background: var(--overlay-bg);
+            display: none; justify-content: center; align-items: center; z-index: 1000;
+        }
+        .setup-box {
+            background: var(--bg-card); padding: 30px; border-radius: 12px;
+            width: 90%; max-width: 500px; border: 1px solid var(--border-color);
+        }
+        .setup-box h2 { margin-top: 0; }
+        .setup-box label { display: block; font-size: 0.85em; color: var(--text-muted); margin: 12px 0 4px; }
+        .setup-box input {
+            width: 100%; padding: 10px; margin: 4px 0;
+            border: 1px solid var(--border-color); border-radius: 5px;
+            box-sizing: border-box; background: var(--bg-box); color: var(--text-main); font-size: 1em;
+        }
+        .setup-box .hint { font-size: 0.75em; color: var(--text-muted); margin-top: 4px; }
+        .setup-box button {
+            width: 100%; padding: 12px; background: var(--success-color); color: white;
+            border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1em; margin-top: 16px;
+        }
+        .setup-box button:hover { opacity: 0.9; }
+        .setup-box .link-btn { background: transparent; color: var(--text-muted); font-weight: normal; margin-top: 8px; text-decoration: underline; }
+
+        /* === Toast === */
+        #toast {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            background: var(--text-main); color: var(--bg-page);
+            padding: 12px 20px; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 2000;
+            font-size: 0.95em; max-width: 90vw; opacity: 0; transition: opacity 0.3s;
+        }
+        #toast.show { opacity: 1; }
+        #toast.error { background: var(--danger-color); color: white; }
+        #toast.success { background: var(--success-color); color: white; }
+        #toast.info { background: var(--primary-color); color: white; }
+
+        /* === 連線狀態燈號 (Stage D) === */
+        #conn-light {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.8em; padding: 5px 10px;
+            border-radius: 14px; border: 1px solid var(--border-color);
+            background: var(--bg-box); color: var(--text-muted);
+        }
+        #conn-light .dot {
+            width: 9px; height: 9px; border-radius: 50%;
+            background: var(--text-muted); transition: background 0.3s;
+        }
+        #conn-light.online .dot { background: var(--success-color); }
+        #conn-light.online { color: var(--success-color); }
+        #conn-light.offline .dot { background: var(--danger-color); }
+        #conn-light.offline { color: var(--danger-color); }
+        #conn-light.syncing .dot { background: var(--warning-color); animation: blink 0.8s infinite; }
+        @keyframes blink { 50% { opacity: 0.3; } }
+
+        /* === 工具箱 (Stage D：匯出/匯入) === */
+        .toolbox-card {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 10px; padding: 16px 20px; margin-bottom: 16px;
+            display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+        }
+        .toolbox-title { font-weight: bold; margin-right: auto; }
+        .toolbox-card .btn-tool {
+            padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer;
+            font-weight: bold; font-size: 0.9em; color: #fff;
+        }
+        .btn-tool.btn-export { background: var(--success-color); }
+        .btn-tool.btn-export:hover { opacity: 0.9; }
+        .btn-tool.btn-export:disabled { opacity: 0.5; cursor: wait; }
+        .btn-tool.btn-import { background: var(--warning-color); }
+        .btn-tool.btn-import:hover { opacity: 0.9; }
+
+        /* === Modal (匯入確認) === */
+        #modal-overlay {
+            position: fixed; inset: 0; background: var(--overlay-bg);
+            display: none; justify-content: center; align-items: center; z-index: 1500;
+        }
+        .modal-box {
+            background: var(--bg-card); padding: 28px; border-radius: 12px;
+            width: 90%; max-width: 560px; border: 1px solid var(--border-color);
+            max-height: 80vh; overflow-y: auto;
+        }
+        .modal-box h3 { margin-top: 0; }
+        .modal-box .danger-box {
+            background: rgba(231, 76, 60, 0.1); border: 1px solid var(--danger-color);
+            border-radius: 6px; padding: 12px; margin: 12px 0;
+        }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+        /* === Modal 內嘅選項 radio (Stage D-UX) === */
+        .option-group { margin: 14px 0; }
+        .option-group .opt-title { font-weight: bold; margin-bottom: 8px; font-size: 0.95em; }
+        .option-item {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 10px 12px; margin: 6px 0;
+            border: 2px solid var(--border-color); border-radius: 6px;
+            cursor: pointer; transition: border-color 0.2s, background 0.2s;
+        }
+        .option-item:hover { border-color: var(--text-muted); }
+        .option-item.selected { border-color: var(--border-focus); background: var(--header-bg); }
+        .option-item input[type="radio"] { margin-top: 3px; cursor: pointer; }
+        .option-item .opt-label { font-weight: bold; font-size: 0.95em; }
+        .option-item .opt-desc { font-size: 0.82em; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
     </style>
 </head>
 <body>
-    <h1>📚 我的電子書管理書櫃</h1>
-    
-    <div class="controls">
-        <h3 style="margin-top: 0;">📂 第一步：載入書櫃目錄</h3>
-        
-        <div style="padding-bottom: 15px; border-bottom: 1px solid #333; margin-bottom: 15px;">
-            <p style="font-size: 0.85em; color: #888; margin: 0 0 10px 0;">💻 電腦用家：可以直接揀檔案</p>
-            <button onclick="loadBookshelfFile()">🖥️ 選擇 JSON 檔案載入</button>
-        </div>
 
-        <div>
-            <p style="font-size: 0.85em; color: #888; margin: 0 0 10px 0;">📱 手機用家 / 備用方案：請直接貼上 JSON 內容</p>
-            <textarea id="json-paste-area" rows="4" placeholder='{"config": {...}, "books": [...]}'></textarea>
-            <button onclick="loadPastedJSON()" style="background-color: #27ae60;">📥 載入貼上嘅資料</button>
+    <!-- ===== Setup Overlay：Firebase 設定 ===== -->
+    <div id="setup-overlay">
+        <div class="setup-box">
+            <h2>🔐 連接 Firebase 雲端</h2>
+            <p style="font-size: 0.85em; color: var(--text-muted);">請填入 Firebase Project Settings →「Your apps」中的 Web app 資料。authDomain 會由 projectId 自動推算。</p>
+            <label for="conf-apiKey">apiKey *</label>
+            <input type="text" id="conf-apiKey" placeholder="AIzaSy..." autocomplete="off">
+            <label for="conf-projectId">projectId *</label>
+            <input type="text" id="conf-projectId" placeholder="your-project-id" autocomplete="off">
+            <label for="conf-appId">appId</label>
+            <input type="text" id="conf-appId" placeholder="1:xxxx:web:xxxx" autocomplete="off">
+            <p class="hint">* authDomain 將自動設為 <code>{projectId}.firebaseapp.com</code><br>* 資料只會儲存喺此瀏覽器嘅 localStorage，唔會寫入原始碼或 URL。</p>
+            <button onclick="saveConfig()">🚀 儲存並初始化</button>
+            <button class="link-btn" onclick="clearConfig()">清除已儲存設定</button>
         </div>
-        
-        <p id="file-status" style="font-size: 0.8em; color: #888; text-align: center; margin-top: 15px;">尚未載入目錄</p>
     </div>
 
-    <div class="controls" id="add-zone" style="display:none;">
-        <h3 style="margin-top: 0;">⚙️ 管理目錄</h3>
-        <input type="text" id="new-book-name" placeholder="書名">
-        <input type="text" id="new-book-pwd" placeholder="專屬密碼">
-        <div class="flex-btns">
-            <button onclick="addBookToShelf()">➕ 新增書本</button>
-            <button onclick="copyUpdatedJSON()" id="copy-json-btn" style="background-color: #f39c12; display: none;">📋 複製最新 JSON (手動備份)</button>
+    <!-- ===== App Shell ===== -->
+    <header class="app-header">
+        <div class="brand">📚 深度閱讀筆記系統</div>
+        <div class="header-right">
+            <div id="conn-light" class="offline" title="連線狀態">
+                <span class="dot"></span>
+                <span class="label">離線</span>
+            </div>
+            <div id="user-chip" hidden></div>
         </div>
-        <p style="font-size: 0.75em; color: #888; margin-top: 10px; line-height: 1.4;">* 提示：如果喺手機版加咗新書或者調咗位，記得撳「複製最新 JSON」，自己 Paste 返去備份檔度呀！</p>
-    </div>
+    </header>
 
-    <div class="shelf-container" id="shelf"></div>
+    <main id="view-root">
+        <div class="card placeholder">
+            <p>⏳ 正在初始化...</p>
+        </div>
+    </main>
+
+    <!-- ===== Toast ===== -->
+    <div id="toast" hidden></div>
+
+    <!-- ===== Modal (匯入確認，Stage D) ===== -->
+    <div id="modal-overlay">
+        <div class="modal-box">
+            <h3 id="modal-title">確認</h3>
+            <div id="modal-body"></div>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="modal-cancel" style="color:#fff;padding:10px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">取消</button>
+                <button class="btn-danger" id="modal-confirm" style="color:#fff;padding:10px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">確認執行</button>
+            </div>
+        </div>
+    </div>
 
 <script>
-    let bookshelfData = { config: {}, books: [] };
-    let fileHandle = null;
-    let dragIndex = null;
-    let isManualMode = false;
+    /* =========================================================
+     *  Phase 2 · Stage A：SPA 骨架 + Firebase Auth (Google)
+     *  - Hash Router: #/login, #/shelf, #/book/{id}
+     *  - onAuthStateChanged 護欄：未登入強制 #/login
+     *  - Setup Overlay：Config 存 localStorage，唔 hardcode、唔行 URL
+     *  - escapeHTML：Unicode 技巧（Developer Briefing Note §4.1，切勿改回 entity 字串）
+     * ========================================================= */
 
-    // 1. 電腦版：載入本地檔案
-    async function loadBookshelfFile() {
-        try {
-            if (!window.showOpenFilePicker) throw new Error("Browser not supported");
-            [fileHandle] = await window.showOpenFilePicker({
-                types: [{ description: 'JSON Files', accept: {'application/json': ['.json']} }]
-            });
-            const file = await fileHandle.getFile();
-            const contents = await file.text();
-            bookshelfData = JSON.parse(contents);
-            isManualMode = false;
-            
-            // 將內容同步落 Text Box 等用家睇到
-            document.getElementById('json-paste-area').value = JSON.stringify(bookshelfData, null, 2);
-            setupUI("已載入檔案：" + file.name);
-        } catch (e) { 
-            console.log(e);
-            alert("你嘅瀏覽器唔支援直接揀檔案，請將文字 Copy 落下面個 Text Box 度載入！"); 
-        }
+    // ===== 常數與全域狀態 =====
+    const LS_CONFIG_KEY = 'fb_notes_config_v2'; // Phase 2 新 key，唔覆蓋 Phase 1 舊 key
+    let firebaseAppReady = false;
+    let currentUser = null;
+    let authReady = false;
+
+    // Shelf 即時訂閱狀態（Stage B）
+    let shelfUnsub = null;     // onSnapshot 解綁函數
+    let shelfBooks = [];       // 當前書單（QueryDocumentSnapshot 陣列）
+
+    // Book editor 即時訂閱狀態（Stage C）
+    let bookDocUnsub = null;   // book doc（標題）訂閱
+    let bookOrigUnsub = null;  // source/main 原文訂閱
+    let bookNotesUnsub = null; // notes 子集合訂閱
+    let bookNotes = [];        // 當前節錄列表
+    let currentBookId = null;
+    let currentBookDoc = null;
+    let bookEditingLock = false; // contenteditable / textarea focus 時為 true，擋住 re-render
+    const debounceTimers = {};   // debounce save 計時器
+
+    // ===== XSS 防禦：HTML Escape（attribute + body context 通用）=====
+    function escapeHTML(str) {
+        if (str === null || str === undefined) return '';
+        const amp = '\u0026';
+        return String(str)
+            .replace(/&/g, amp + 'amp;')
+            .replace(/</g, amp + 'lt;')
+            .replace(/>/g, amp + 'gt;')
+            .replace(/"/g, amp + 'quot;')
+            .replace(/'/g, amp + '#39;');
     }
 
-    // 2. 手機版：載入 Text Box 貼上嘅資料
-    function loadPastedJSON() {
-        const pasteArea = document.getElementById('json-paste-area');
-        if (!pasteArea.value.trim()) return alert("請先貼上資料！");
-        
+    // ===== Toast =====
+    let toastTimer = null;
+    function showToast(msg, type) {
+        type = type || 'info';
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.hidden = false;
+        t.className = 'toast show ' + type;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () {
+            t.className = 'toast';
+            t.hidden = true;
+        }, 2600);
+    }
+
+    // ===== Setup Overlay =====
+    function showSetupOverlay() {
+        document.getElementById('setup-overlay').style.display = 'flex';
+    }
+    function hideSetupOverlay() {
+        document.getElementById('setup-overlay').style.display = 'none';
+    }
+    function saveConfig() {
+        const apiKey = document.getElementById('conf-apiKey').value.trim();
+        const projectId = document.getElementById('conf-projectId').value.trim();
+        const appId = document.getElementById('conf-appId').value.trim();
+        if (!apiKey || !projectId) {
+            showToast('請至少填入 apiKey 與 projectId', 'error');
+            return;
+        }
+        const authDomain = projectId + '.firebaseapp.com';
+        const config = { apiKey: apiKey, authDomain: authDomain, projectId: projectId, appId: appId };
+        localStorage.setItem(LS_CONFIG_KEY, JSON.stringify(config));
+        showToast('設定已儲存，正在初始化...', 'success');
+        setTimeout(function () { location.reload(); }, 700);
+    }
+    function clearConfig() {
+        if (!confirm('確定要重設雲端連線資料？\n（唔會刪除你嘅筆記，只係登出雲端）')) return;
+        localStorage.removeItem(LS_CONFIG_KEY);
+        location.reload();
+    }
+
+    // ===== Firebase 初始化 =====
+    function initFirebase() {
+        if (typeof firebase === 'undefined') {
+            showToast('Firebase SDK 載入失敗，請檢查網路連線', 'error');
+            return;
+        }
+        const rawConfig = localStorage.getItem(LS_CONFIG_KEY);
+        if (!rawConfig) {
+            showSetupOverlay();
+            renderBootPlaceholder('尚未設定 Firebase，請喺彈出視窗填入資料。');
+            return;
+        }
+        let config;
         try {
-            bookshelfData = JSON.parse(pasteArea.value);
-            isManualMode = true;
-            fileHandle = null; // 清除電腦版嘅 File Handle
-            setupUI("已載入：手動貼上模式 📱");
+            config = JSON.parse(rawConfig);
         } catch (e) {
-            alert("JSON 格式有錯 ❌ 請檢查有冇漏咗括號或者逗號！");
+            showToast('已儲存嘅 Config 格式錯誤，請重新設定', 'error');
+            localStorage.removeItem(LS_CONFIG_KEY);
+            showSetupOverlay();
+            return;
+        }
+        try {
+            firebase.initializeApp(config);
+            const db = firebase.firestore();
+            // 啟用內建 offline persistence（取代 Phase 1 人手 localStorage cache）
+            db.enablePersistence({ synchronizeTabs: false }).catch(function (err) {
+                console.warn('Offline persistence 無法啟用：', err.code, err.message);
+            });
+            firebaseAppReady = true;
+
+            // 連線狀態燈號（Stage D：navigator.onLine + online/offline 事件驅動）
+            setupConnLight();
+
+            // 處理 redirect 登入嘅結果（彈窗被封鎖時 fallback）
+            firebase.auth().getRedirectResult().catch(function (err) {
+                showToast('登入失敗：' + err.message, 'error');
+            });
+
+            // 核心護欄：監聽 Auth 狀態
+            firebase.auth().onAuthStateChanged(function (user) {
+                currentUser = user;
+                authReady = true;
+                updateUserChip();
+                router();
+            });
+        } catch (err) {
+            console.error('Firebase init 失敗', err);
+            showToast('Firebase 初始化失敗：' + err.message, 'error');
+            showSetupOverlay();
         }
     }
 
-    function setupUI(statusMsg) {
-        document.getElementById('add-zone').style.display = 'block';
-        document.getElementById('file-status').innerText = statusMsg;
-        if (isManualMode) {
-            document.getElementById('copy-json-btn').style.display = 'block';
+    // ===== Google 登入 / 登出 =====
+    function signInWithGoogle() {
+        if (!firebaseAppReady) {
+            showToast('Firebase 尚未初始化完成', 'error');
+            return;
+        }
+        const provider = new firebase.auth.GoogleAuthProvider();
+        firebase.auth().signInWithPopup(provider).catch(function (err) {
+            if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
+                showToast('彈窗被封鎖，改用跳轉登入中...', 'info');
+                firebase.auth().signInWithRedirect(provider);
+            } else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
+                showToast('登入失敗：' + err.message, 'error');
+            }
+        });
+    }
+    function signOut() {
+        if (!confirm('確定要登出？')) return;
+        firebase.auth().signOut().then(function () {
+            location.hash = '#/login';
+        });
+    }
+
+    // ===== Header User Chip =====
+    function updateUserChip() {
+        const chip = document.getElementById('user-chip');
+        chip.innerHTML = '';
+        if (currentUser) {
+            chip.hidden = false;
+            const name = document.createElement('span');
+            name.textContent = '👤 ' + (currentUser.displayName || currentUser.email || '已登入');
+            chip.appendChild(name);
+            const btn = document.createElement('button');
+            btn.className = 'btn-icon';
+            btn.textContent = '登出';
+            btn.onclick = signOut;
+            chip.appendChild(btn);
         } else {
-            document.getElementById('copy-json-btn').style.display = 'none';
+            chip.hidden = true;
         }
-        renderShelf();
     }
 
-    // 3. 儲存/更新 JSON 資料
-    async function saveBookshelfFile() {
-        // 無論如何，先更新 Text Box 入面嘅字
-        document.getElementById('json-paste-area').value = JSON.stringify(bookshelfData, null, 2);
-        
-        if (!isManualMode && fileHandle) {
-            // 如果係電腦版，自動幫佢 Save 埋落個真實 File 度
-            try {
-                const writable = await fileHandle.createWritable();
-                await writable.write(JSON.stringify(bookshelfData, null, 2));
-                await writable.close();
-            } catch (e) {
-                console.error("自動儲存檔案失敗", e);
+    // ===== Hash Router =====
+    function router() {
+        if (!authReady) return; // 等 Auth 狀態就緒先決定路線
+        const raw = location.hash.slice(1) || '/shelf';
+        const parts = raw.split('/').filter(Boolean);
+        const route = parts[0] || 'shelf';
+
+        // 護欄：未登入一律去 login
+        if (!currentUser) {
+            if (route !== 'login') {
+                location.replace('#/login');
+                return;
+            }
+            renderLogin();
+            return;
+        }
+
+        // 已登入但停喺 login → 導去 shelf
+        if (route === 'login') {
+            location.replace('#/shelf');
+            return;
+        }
+
+        // 離開任何 view 前先解除所有訂閱（避免重複監聽同記憶體洩漏）
+        teardownBook();
+        teardownShelf();
+
+        if (route === 'shelf') {
+            renderShelf();
+        } else if (route === 'book' && parts[1]) {
+            renderBook(parts[1]);
+        } else {
+            location.replace('#/shelf');
+        }
+    }
+
+    // ===== Shelf 資料層 (Stage B：Firestore 書單 CRUD) =====
+    // 資料結構：users/{uid}/books/{bookId} = { title, order, updatedAt }
+    function booksCol() {
+        return firebase.firestore().collection('users').doc(currentUser.uid).collection('books');
+    }
+    function bookDoc(bookId) {
+        return booksCol().doc(bookId);
+    }
+
+    // 新增書本（order = 末尾 order + 1，保證排喺最後）
+    async function addBookToCloud(title) {
+        const snap = await booksCol().orderBy('order', 'desc').limit(1).get();
+        let nextOrder = 0;
+        if (!snap.empty) {
+            const lastOrder = snap.docs[0].data().order;
+            nextOrder = (typeof lastOrder === 'number' ? lastOrder : 0) + 1;
+        }
+        await booksCol().add({
+            title: title,
+            order: nextOrder,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }
+
+    // 改名
+    async function renameBookCloud(bookId, newTitle) {
+        await bookDoc(bookId).update({
+            title: newTitle,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }
+
+    // 上移 / 下移：互換相鄰兩本書嘅 order 欄位
+    async function moveBookCloud(index, direction) {
+        if (!shelfBooks.length) return;
+        const newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= shelfBooks.length) return;
+        const a = shelfBooks[index];
+        const b = shelfBooks[newIndex];
+        const batch = firebase.firestore().batch();
+        batch.update(bookDoc(a.id), { order: b.data().order, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        batch.update(bookDoc(b.id), { order: a.data().order, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        await batch.commit();
+    }
+
+    // 刪除書本（連同 source/main 與 notes 子集合，使用 batch 一次過清）
+    async function deleteBookCloud(bookId) {
+        const batch = firebase.firestore().batch();
+        const notesSnap = await bookDoc(bookId).collection('notes').get();
+        notesSnap.forEach(function (d) { batch.delete(d.ref); });
+        batch.delete(bookDoc(bookId).collection('source').doc('main')); // 原文固定 doc
+        batch.delete(bookDoc(bookId));
+        await batch.commit();
+    }
+
+    // 解綁 shelf 訂閱（離開 shelf view 時必須呼叫，避免記憶體洩漏同重複監聽）
+    function teardownShelf() {
+        if (shelfUnsub) {
+            try { shelfUnsub(); } catch (e) { /* 忽略 */ }
+            shelfUnsub = null;
+        }
+    }
+
+    /* ===== Book Editor 資料層 (Stage C) =====
+       資料結構：
+         users/{uid}/books/{bookId}                = { title, order, updatedAt }
+         users/{uid}/books/{bookId}/source/main    = { originalText, updatedAt }   ← 原文獨立 doc（避開 1MB 限制）
+         users/{uid}/books/{bookId}/notes/{noteId} = { subheading, extract, note, order, updatedAt }
+    */
+    function notesCol(bookId) { return bookDoc(bookId).collection('notes'); }
+    function noteDoc(bookId, noteId) { return notesCol(bookId).doc(noteId); }
+    function sourceDoc(bookId) { return bookDoc(bookId).collection('source').doc('main'); }
+
+    async function addNoteCloud(bookId, data) {
+        const snap = await notesCol(bookId).orderBy('order', 'desc').limit(1).get();
+        let nextOrder = 0;
+        if (!snap.empty) {
+            const last = snap.docs[0].data().order;
+            nextOrder = (typeof last === 'number' ? last : 0) + 1;
+        }
+        await notesCol(bookId).add({
+            subheading: data.subheading || '',
+            extract: data.extract || '',
+            note: data.note || '',
+            order: nextOrder,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }
+    async function updateNoteCloud(bookId, noteId, patch) {
+        patch.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+        await noteDoc(bookId, noteId).update(patch);
+    }
+    async function deleteNoteCloud(bookId, noteId) { await noteDoc(bookId, noteId).delete(); }
+    async function moveNoteCloud(bookId, index, direction) {
+        if (!bookNotes.length) return;
+        const newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= bookNotes.length) return;
+        const a = bookNotes[index], b = bookNotes[newIndex];
+        const batch = firebase.firestore().batch();
+        batch.update(noteDoc(bookId, a.id), { order: b.data().order, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        batch.update(noteDoc(bookId, b.id), { order: a.data().order, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        await batch.commit();
+    }
+    async function saveOriginalTextCloud(bookId, text) {
+        await sourceDoc(bookId).set({ originalText: text, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    }
+
+    function teardownBook() {
+        if (bookDocUnsub) { try { bookDocUnsub(); } catch (e) {} bookDocUnsub = null; }
+        if (bookOrigUnsub) { try { bookOrigUnsub(); } catch (e) {} bookOrigUnsub = null; }
+        if (bookNotesUnsub) { try { bookNotesUnsub(); } catch (e) {} bookNotesUnsub = null; }
+        bookNotes = []; currentBookId = null; currentBookDoc = null;
+        Object.keys(debounceTimers).forEach(function (k) { clearTimeout(debounceTimers[k]); delete debounceTimers[k]; });
+    }
+
+    // UI state 存 localStorage（唔上雲，呼應顧問建議）
+    function getBookUIState(bookId) {
+        try { return JSON.parse(localStorage.getItem('uiState_book_' + bookId)) || {}; } catch (e) { return {}; }
+    }
+    function setBookUIState(bookId, state) { localStorage.setItem('uiState_book_' + bookId, JSON.stringify(state)); }
+
+    function isAnyNoteEditing() {
+        const ae = document.activeElement;
+        return !!(ae && (ae.classList.contains('ext-text-box') || ae.classList.contains('book-title-input') || ae.classList.contains('ext-subheading-input') || ae.classList.contains('orig-textarea')));
+    }
+
+    // Debounce save note（900ms，避免逐字寫雲端）
+    function debounceSaveNote(bookId, noteId, field, value) {
+        const key = bookId + '_' + noteId + '_' + field;
+        clearTimeout(debounceTimers[key]);
+        debounceTimers[key] = setTimeout(function () {
+            const patch = {}; patch[field] = value;
+            updateNoteCloud(bookId, noteId, patch).catch(function (err) { showToast('儲存失敗：' + err.message, 'error'); });
+            delete debounceTimers[key];
+        }, 900);
+    }
+
+    // 通用：開始編輯 text box
+    function enableEditTextBox(el) { el.contentEditable = 'true'; el.classList.remove('editable'); el.focus(); }
+    function copyText(text) { navigator.clipboard.writeText(text).then(function () { showToast('已複製', 'success'); }); }
+
+    // 非破壞性節錄：複製反白文字去新 note（唔剪走原文）
+    function extractSelectedToNote(bookId) {
+        const ta = document.querySelector('.orig-textarea');
+        if (!ta) { showToast('請先展開原文區', 'error'); return; }
+        const start = ta.selectionStart, end = ta.selectionEnd;
+        if (start === end) { showToast('請先喺原文區反白文字', 'error'); return; }
+        const selected = ta.value.substring(start, end);
+        addNoteCloud(bookId, { subheading: '', extract: selected, note: '' })
+            .then(function () { showToast('已新增節錄（原文保留，非破壞性）', 'success'); })
+            .catch(function (err) { showToast('新增失敗：' + err.message, 'error'); });
+    }
+
+    function handleOrigFileUpload(bookId, event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            saveOriginalTextCloud(bookId, e.target.result)
+                .then(function () { showToast('原文已上傳', 'success'); })
+                .catch(function (err) { showToast('上傳失敗：' + err.message, 'error'); });
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+
+    // ===== Book editor 渲染函數 =====
+    function renderOriginalSection(section, bookId, text) {
+        const ui = getBookUIState(bookId);
+        const collapsed = !!ui.origCollapsed;
+        section.innerHTML = '';
+
+        const header = document.createElement('div');
+        header.className = 'orig-header';
+        const title = document.createElement('strong');
+        title.style.fontSize = '1.1em';
+        const arrow = document.createElement('span');
+        arrow.className = 'orig-arrow' + (collapsed ? ' collapsed' : '');
+        arrow.textContent = '▼';
+        title.appendChild(arrow);
+        title.appendChild(document.createTextNode(' 📚 原文書本內容'));
+        header.appendChild(title);
+
+        const actions = document.createElement('div');
+        actions.className = 'orig-actions';
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file'; fileInput.accept = '.txt,.md'; fileInput.style.display = 'none';
+        fileInput.onchange = function (e) { handleOrigFileUpload(bookId, e); };
+        actions.appendChild(fileInput);
+        const uploadBtn = document.createElement('button');
+        uploadBtn.className = 'btn-secondary'; uploadBtn.style.color = '#fff';
+        uploadBtn.style.padding = '8px 14px'; uploadBtn.style.border = 'none';
+        uploadBtn.style.borderRadius = '6px'; uploadBtn.style.cursor = 'pointer'; uploadBtn.style.fontWeight = 'bold';
+        uploadBtn.textContent = '上傳 TXT/MD';
+        uploadBtn.onclick = function (e) { e.stopPropagation(); fileInput.click(); };
+        actions.appendChild(uploadBtn);
+        header.appendChild(actions);
+
+        header.onclick = function () {
+            const st = getBookUIState(bookId);
+            st.origCollapsed = !st.origCollapsed;
+            setBookUIState(bookId, st);
+            renderOriginalSection(section, bookId, text);
+        };
+        section.appendChild(header);
+
+        if (!collapsed) {
+            const ta = document.createElement('textarea');
+            ta.className = 'orig-textarea';
+            ta.placeholder = '上傳書本檔案，或直接在此貼上原文...';
+            ta.value = text;
+            ta.onfocus = function () { bookEditingLock = true; };
+            ta.onblur = function () {
+                bookEditingLock = false;
+                if (ta.value !== text) {
+                    saveOriginalTextCloud(bookId, ta.value)
+                        .then(function () { showToast('原文已儲存', 'success'); })
+                        .catch(function (err) { showToast('原文儲存失敗：' + err.message, 'error'); });
+                }
+            };
+            section.appendChild(ta);
+        }
+    }
+
+    function renderNotesList(container, bookId) {
+        container.innerHTML = '';
+        if (bookNotes.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'ext-empty';
+            empty.textContent = '📝 尚無節錄。請喺上方原文區反白文字，再撳「📋 節錄反白文字」。';
+            container.appendChild(empty);
+            return;
+        }
+        bookNotes.forEach(function (doc, index) { container.appendChild(renderNoteCard(bookId, doc, index)); });
+    }
+
+    function renderNoteCard(bookId, doc, index) {
+        const note = doc.data();
+        const ui = getBookUIState(bookId);
+        const collapsed = !!(ui.notes && ui.notes[doc.id] && ui.notes[doc.id].collapsed);
+
+        const card = document.createElement('div');
+        card.className = 'ext-card';
+
+        const header = document.createElement('div');
+        header.className = 'ext-header';
+
+        const arrow = document.createElement('span');
+        arrow.className = 'ext-arrow' + (collapsed ? ' collapsed' : '');
+        arrow.textContent = '▼';
+        arrow.onclick = function () { toggleNoteCollapse(bookId, doc.id); };
+        header.appendChild(arrow);
+
+        const subheading = document.createElement('span');
+        subheading.className = 'ext-subheading';
+        subheading.textContent = note.subheading || '(未命名章節)';
+        subheading.onclick = function () { beginEditNoteSubheading(bookId, doc.id, card); };
+        header.appendChild(subheading);
+
+        header.appendChild(makeMiniBtn('⬆️', 'btn-secondary', index === 0, function () {
+            moveNoteCloud(bookId, index, -1).catch(function (err) { showToast('排序失敗：' + err.message, 'error'); });
+        }));
+        header.appendChild(makeMiniBtn('⬇️', 'btn-secondary', index === bookNotes.length - 1, function () {
+            moveNoteCloud(bookId, index, 1).catch(function (err) { showToast('排序失敗：' + err.message, 'error'); });
+        }));
+        header.appendChild(makeMiniBtn('🗑️', 'btn-danger', false, function () {
+            if (confirm('確定刪除此節錄？')) deleteNoteCloud(bookId, doc.id).then(function () { showToast('已刪除', 'success'); });
+        }));
+        card.appendChild(header);
+
+        if (!collapsed) {
+            const body = document.createElement('div');
+            body.className = 'ext-body';
+
+            // 左欄：原文節錄
+            const left = document.createElement('div');
+            left.className = 'ext-pane ext-pane-left';
+            const leftHeader = document.createElement('div');
+            leftHeader.className = 'ext-pane-header';
+            const leftLabel = document.createElement('span'); leftLabel.textContent = '📖 原文節錄'; leftHeader.appendChild(leftLabel);
+            const leftBtns = document.createElement('div');
+            leftBtns.appendChild(makeMiniBtn('✏️ 編輯', 'btn-secondary', false, function () { enableEditTextBox(leftBox); }));
+            leftBtns.appendChild(makeMiniBtn('複製', 'btn-secondary', false, function () { copyText(leftBox.innerText); }));
+            leftHeader.appendChild(leftBtns);
+            left.appendChild(leftHeader);
+            const leftBox = document.createElement('div');
+            leftBox.className = 'ext-text-box editable';
+            leftBox.textContent = note.extract || '';
+            leftBox.onfocus = function () { bookEditingLock = true; };
+            leftBox.onblur = function () { bookEditingLock = false; debounceSaveNote(bookId, doc.id, 'extract', leftBox.innerText); };
+            left.appendChild(leftBox);
+            body.appendChild(left);
+
+            // 右欄：個人筆記
+            const right = document.createElement('div');
+            right.className = 'ext-pane';
+            const rightHeader = document.createElement('div');
+            rightHeader.className = 'ext-pane-header';
+            const rightLabel = document.createElement('span'); rightLabel.textContent = '✍️ 個人筆記'; rightHeader.appendChild(rightLabel);
+            const rightBtns = document.createElement('div');
+            rightBtns.appendChild(makeMiniBtn('✏️ 編輯', 'btn-secondary', false, function () { enableEditTextBox(rightBox); }));
+            rightBtns.appendChild(makeMiniBtn('複製', 'btn-secondary', false, function () { copyText(rightBox.innerText); }));
+            rightHeader.appendChild(rightBtns);
+            right.appendChild(rightHeader);
+            const rightBox = document.createElement('div');
+            rightBox.className = 'ext-text-box editable';
+            rightBox.textContent = note.note || '';
+            rightBox.onfocus = function () { bookEditingLock = true; };
+            rightBox.onblur = function () { bookEditingLock = false; debounceSaveNote(bookId, doc.id, 'note', rightBox.innerText); };
+            right.appendChild(rightBox);
+            body.appendChild(right);
+
+            card.appendChild(body);
+        }
+        return card;
+    }
+
+    function toggleNoteCollapse(bookId, noteId) {
+        const st = getBookUIState(bookId);
+        if (!st.notes) st.notes = {};
+        if (!st.notes[noteId]) st.notes[noteId] = {};
+        st.notes[noteId].collapsed = !st.notes[noteId].collapsed;
+        setBookUIState(bookId, st);
+        renderNotesList(document.getElementById('notes-container'), bookId);
+    }
+
+    function beginEditNoteSubheading(bookId, noteId, card) {
+        const note = bookNotes.find(function (d) { return d.id === noteId; });
+        if (!note) return;
+        const oldVal = note.data().subheading || '';
+        const subEl = card.querySelector('.ext-subheading');
+        if (!subEl) return;
+        const input = document.createElement('input');
+        input.className = 'ext-subheading-input'; input.value = oldVal;
+        subEl.replaceWith(input); input.focus(); input.select();
+        function commit() {
+            const newVal = input.value;
+            const newSpan = document.createElement('span');
+            newSpan.className = 'ext-subheading';
+            newSpan.textContent = newVal || '(未命名章節)';
+            newSpan.onclick = function () { beginEditNoteSubheading(bookId, noteId, card); };
+            input.replaceWith(newSpan);
+            if (newVal !== oldVal) {
+                updateNoteCloud(bookId, noteId, { subheading: newVal }).catch(function (err) { showToast('儲存失敗：' + err.message, 'error'); });
             }
         }
+        input.onblur = commit;
+        input.onkeydown = function (e) { if (e.key === 'Enter') input.blur(); };
     }
 
-    // 4. 手動複製最新 JSON (手機專用備份)
-    function copyUpdatedJSON() {
-        const jsonString = document.getElementById('json-paste-area').value;
-        navigator.clipboard.writeText(jsonString).then(() => {
-            alert("✅ 最新目錄 JSON 已複製！\n\n請自行將佢 Paste 返去你平時 Keep 住個 Text File / Notes 嗰度做備份。");
+    // ===== Shelf 渲染輔助 =====
+    function renderShelfLoading(grid) {
+        grid.innerHTML = '';
+        const c = document.createElement('div');
+        c.className = 'card placeholder';
+        const p = document.createElement('p');
+        p.textContent = '⏳ 載入書櫃中...';
+        c.appendChild(p);
+        grid.appendChild(c);
+    }
+
+    function renderShelfList(grid) {
+        grid.innerHTML = '';
+        if (shelfBooks.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'card placeholder';
+            const p1 = document.createElement('p');
+            p1.innerHTML = '📭 <strong>書櫃是空的</strong>';
+            empty.appendChild(p1);
+            const p2 = document.createElement('p');
+            p2.className = 'muted';
+            p2.textContent = '喺上方輸入書名，新增你嘅第一本書。';
+            empty.appendChild(p2);
+            grid.appendChild(empty);
+            return;
+        }
+        shelfBooks.forEach(function (doc, index) {
+            const book = doc.data();
+            const title = book.title || '(未命名)';
+
+            const card = document.createElement('div');
+            card.className = 'book-card';
+
+            // 標題（點擊開啟筆記）
+            const titleEl = document.createElement('div');
+            titleEl.className = 'book-title';
+            titleEl.textContent = title;
+            titleEl.title = '點擊開啟';
+            titleEl.onclick = function () { location.hash = '#/book/' + doc.id; };
+            card.appendChild(titleEl);
+
+            // 控制列
+            const controls = document.createElement('div');
+            controls.className = 'book-controls';
+
+            const upBtn = makeMiniBtn('⬆️ 上移', 'btn-secondary', index === 0, function () {
+                moveBookCloud(index, -1).catch(function (err) { showToast('排序失敗：' + err.message, 'error'); });
+            });
+            const downBtn = makeMiniBtn('⬇️ 下移', 'btn-secondary', index === shelfBooks.length - 1, function () {
+                moveBookCloud(index, 1).catch(function (err) { showToast('排序失敗：' + err.message, 'error'); });
+            });
+            const renameBtn = makeMiniBtn('✏️ 改名', 'btn-secondary', false, function () {
+                const newName = prompt('修改書名：', title);
+                if (newName !== null && newName.trim() !== '') {
+                    renameBookCloud(doc.id, newName.trim())
+                        .then(function () { showToast('已改名', 'success'); })
+                        .catch(function (err) { showToast('改名失敗：' + err.message, 'error'); });
+                }
+            });
+            const delBtn = makeMiniBtn('🗑️ 刪除', 'btn-danger', false, function () {
+                if (!confirm('確定刪除「' + title + '」？\n本書所有原文與筆記都會一併永久刪除。')) return;
+                deleteBookCloud(doc.id)
+                    .then(function () { showToast('已刪除「' + title + '」', 'success'); })
+                    .catch(function (err) { showToast('刪除失敗：' + err.message, 'error'); });
+            });
+
+            controls.appendChild(upBtn);
+            controls.appendChild(downBtn);
+            controls.appendChild(renameBtn);
+            controls.appendChild(delBtn);
+            card.appendChild(controls);
+
+            grid.appendChild(card);
         });
     }
 
-    // 5. 渲染書櫃 (Drag & Drop)
+    function makeMiniBtn(label, cls, disabled, onclick) {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.className = 'btn-mini ' + cls;
+        b.disabled = !!disabled;
+        b.onclick = onclick;
+        return b;
+    }
+
+    // ===== Views =====
+    function renderBootPlaceholder(msg) {
+        const root = document.getElementById('view-root');
+        root.innerHTML = '';
+        const c = document.createElement('div');
+        c.className = 'card placeholder';
+        const p = document.createElement('p');
+        p.textContent = msg;
+        c.appendChild(p);
+        root.appendChild(c);
+    }
+
+    function renderLogin() {
+        teardownShelf(); // 離開 shelf 時解除訂閱
+        const root = document.getElementById('view-root');
+        root.innerHTML = '';
+        const card = document.createElement('div');
+        card.className = 'center-card';
+
+        const h2 = document.createElement('h2');
+        h2.textContent = '🔐 登入深度閱讀筆記系統';
+        card.appendChild(h2);
+
+        const desc = document.createElement('p');
+        desc.className = 'muted';
+        desc.textContent = '只有登入後嘅使用者先可以睇到自己嘅書櫃與筆記。';
+        card.appendChild(desc);
+
+        const btn = document.createElement('button');
+        btn.className = 'btn-google';
+        btn.innerHTML = '🇬 使用 Google 帳號登入';
+        btn.onclick = signInWithGoogle;
+        card.appendChild(btn);
+
+        const note = document.createElement('p');
+        note.className = 'muted small';
+        note.textContent = '* 你嘅資料會以你嘅 User UID 隔離，其他人無法存取。';
+        card.appendChild(note);
+
+        root.appendChild(card);
+    }
+
     function renderShelf() {
-        const shelf = document.getElementById('shelf');
-        shelf.innerHTML = '';
-        bookshelfData.books.forEach((book, index) => {
-            const btn = document.createElement('div');
-            btn.className = 'book-btn';
-            btn.draggable = true;
-            
-            const titleSpan = document.createElement('span');
-            titleSpan.innerText = book.name;
-            titleSpan.onclick = () => openBook(book.pwd);
-            btn.appendChild(titleSpan);
+        teardownShelf();
+        const root = document.getElementById('view-root');
+        root.innerHTML = '';
 
-            const delBtn = document.createElement('button');
-            delBtn.className = 'delete-btn';
-            delBtn.innerText = '刪除';
-            delBtn.onclick = (e) => { e.stopPropagation(); deleteBookFromShelf(index); };
-            btn.appendChild(delBtn);
+        // 標題列
+        const header = document.createElement('div');
+        header.className = 'view-header';
+        const h2 = document.createElement('h2');
+        h2.textContent = '📚 我的雲端書櫃';
+        header.appendChild(h2);
+        const badge = document.createElement('span');
+        badge.className = 'badge-stage';
+        badge.textContent = 'Firestore 即時同步';
+        header.appendChild(badge);
+        root.appendChild(header);
 
-            // Drag & Drop
-            btn.ondragstart = (e) => {
-                dragIndex = index;
-                e.dataTransfer.effectAllowed = "move";
-                setTimeout(() => btn.classList.add('dragging'), 0);
-            };
-            btn.ondragover = (e) => { e.preventDefault(); };
-            btn.ondragenter = (e) => { e.preventDefault(); };
-            btn.ondragend = () => { btn.classList.remove('dragging'); };
-            btn.ondrop = (e) => {
-                e.preventDefault();
-                btn.classList.remove('dragging');
-                if (dragIndex === null || dragIndex === index) return;
-                
-                const item = bookshelfData.books.splice(dragIndex, 1)[0];
-                bookshelfData.books.splice(index, 0, item);
-                
-                dragIndex = null;
-                saveBookshelfFile(); 
-                renderShelf();       
-            };
+        // 工具箱（Stage D：鐵律保留 — 匯出全庫 JSON 本地備份 + 匯入覆蓋）
+        const toolbox = document.createElement('div');
+        toolbox.className = 'toolbox-card';
+        const tbTitle = document.createElement('span');
+        tbTitle.className = 'toolbox-title';
+        tbTitle.textContent = '🛠️ 資料維護';
+        toolbox.appendChild(tbTitle);
 
-            shelf.appendChild(btn);
+        const exportBtn = document.createElement('button');
+        exportBtn.className = 'btn-tool btn-export';
+        exportBtn.textContent = '💾 匯出全庫 JSON 本地備份';
+        exportBtn.onclick = exportLibraryJSON;
+        toolbox.appendChild(exportBtn);
+
+        const importInput = document.createElement('input');
+        importInput.type = 'file'; importInput.accept = '.json'; importInput.style.display = 'none';
+        importInput.onchange = function (e) { handleImportFile(e); };
+        toolbox.appendChild(importInput);
+
+        const importBtn = document.createElement('button');
+        importBtn.className = 'btn-tool btn-import';
+        importBtn.textContent = '📥 匯入 JSON 覆蓋';
+        importBtn.onclick = function () { importInput.click(); };
+        toolbox.appendChild(importBtn);
+        root.appendChild(toolbox);
+
+        // 新增書本卡片
+        const addCard = document.createElement('div');
+        addCard.className = 'card';
+        const addRow = document.createElement('div');
+        addRow.className = 'add-row';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'new-book-title';
+        input.placeholder = '輸入書名（例如：原子習慣）...';
+        input.className = 'add-input';
+        input.maxLength = 200;
+        addRow.appendChild(input);
+
+        const addBtn = document.createElement('button');
+        addBtn.textContent = '➕ 新增書本';
+        addBtn.className = 'btn-primary';
+        addBtn.onclick = async function () {
+            const title = input.value.trim();
+            if (!title) { showToast('請輸入書名', 'error'); return; }
+            try {
+                addBtn.disabled = true;
+                addBtn.textContent = '新增中...';
+                await addBookToCloud(title);
+                input.value = '';
+                showToast('已新增「' + title + '」', 'success');
+            } catch (err) {
+                showToast('新增失敗：' + err.message, 'error');
+            } finally {
+                addBtn.disabled = false;
+                addBtn.textContent = '➕ 新增書本';
+                input.focus();
+            }
+        };
+        input.addEventListener('keydown', function (e) { if (e.key === 'Enter') addBtn.click(); });
+        addRow.appendChild(addBtn);
+
+        addCard.appendChild(addRow);
+        root.appendChild(addCard);
+
+        // 書櫃 grid 容器
+        const grid = document.createElement('div');
+        grid.className = 'shelf-grid';
+        grid.id = 'shelf-grid';
+        root.appendChild(grid);
+
+        // 載入中狀態
+        renderShelfLoading(grid);
+
+        // 即時訂閱（任何裝置改動都會自動同步）
+        shelfUnsub = booksCol().orderBy('order').onSnapshot(function (snap) {
+            shelfBooks = snap.docs;
+            renderShelfList(grid);
+        }, function (err) {
+            console.error('書櫃訂閱失敗', err);
+            grid.innerHTML = '';
+            const e = document.createElement('div');
+            e.className = 'card placeholder';
+            const p1 = document.createElement('p');
+            p1.innerHTML = '❌ <strong>讀取書櫃失敗</strong>';
+            e.appendChild(p1);
+            const p2 = document.createElement('p');
+            p2.className = 'muted';
+            p2.textContent = err.message;
+            e.appendChild(p2);
+            const p3 = document.createElement('p');
+            p3.className = 'muted';
+            p3.innerHTML = '請檢查 Firebase 後台嘅 <strong>Firestore Security Rules</strong> 是否已允許已登入使用者讀寫 <code>users/{uid}/...</code>。';
+            e.appendChild(p3);
+            grid.appendChild(e);
         });
     }
 
-    // 6. 打開書本
-    function openBook(pwd) {
-        const c = bookshelfData.config;
-        const url = `editor.html?apiKey=${c.apiKey}&dbURL=${c.databaseURL}&projId=${c.projectId}&pwd=${pwd}`;
-        window.location.href = url;
+    function renderBook(bookId) {
+        const root = document.getElementById('view-root');
+        root.innerHTML = '';
+        currentBookId = bookId;
+
+        // 返回列
+        const header = document.createElement('div');
+        header.className = 'view-header';
+        const back = document.createElement('button');
+        back.className = 'btn-back';
+        back.textContent = '← 返回書櫃';
+        back.onclick = function () { location.hash = '#/shelf'; };
+        header.appendChild(back);
+        root.appendChild(header);
+
+        // 標題（可點擊 inline 改名）
+        const titleEl = document.createElement('span');
+        titleEl.className = 'book-title-display';
+        titleEl.textContent = '載入中...';
+        titleEl.onclick = function () { beginEditBookTitle(bookId, titleEl); };
+        root.appendChild(titleEl);
+
+        // 節錄工具列
+        const toolbar = document.createElement('div');
+        toolbar.className = 'card';
+        toolbar.style.display = 'flex';
+        toolbar.style.gap = '12px';
+        toolbar.style.alignItems = 'center';
+        toolbar.style.flexWrap = 'wrap';
+        const extractBtn = document.createElement('button');
+        extractBtn.className = 'btn-primary';
+        extractBtn.textContent = '📋 節錄反白文字（非破壞性）';
+        extractBtn.onclick = function () { extractSelectedToNote(bookId); };
+        toolbar.appendChild(extractBtn);
+
+        // 單書匯出按鈕（Stage D-UX：對稱性 — 只導出當前呢本書）
+        const singleExportBtn = document.createElement('button');
+        singleExportBtn.className = 'btn-tool btn-export';
+        singleExportBtn.textContent = '💾 匯出單書 JSON';
+        singleExportBtn.onclick = function () { exportSingleBookJSON(bookId); };
+        toolbar.appendChild(singleExportBtn);
+
+        // 單書匯入按鈕（Stage D-UX：覆蓋或追加模式）
+        const singleImportInput = document.createElement('input');
+        singleImportInput.type = 'file'; singleImportInput.accept = '.json'; singleImportInput.style.display = 'none';
+        singleImportInput.onchange = function (e) { handleSingleBookImportFile(bookId, e); };
+        toolbar.appendChild(singleImportInput);
+        const singleImportBtn = document.createElement('button');
+        singleImportBtn.className = 'btn-tool btn-import';
+        singleImportBtn.textContent = '📥 匯入單書 JSON';
+        singleImportBtn.onclick = function () { singleImportInput.click(); };
+        toolbar.appendChild(singleImportBtn);
+
+        const tip = document.createElement('span');
+        tip.className = 'muted';
+        tip.style.fontSize = '0.82em';
+        tip.style.flexBasis = '100%';
+        tip.textContent = '先喺原文區反白文字，再撳「📋 節錄反白文字」→ 會複製（唔剪走）反白文字去新節錄。或撳「📥 匯入單書 JSON」讀取舊備份追加筆記。';
+        toolbar.appendChild(tip);
+        root.appendChild(toolbar);
+
+        // 原文區
+        const origSection = document.createElement('div');
+        origSection.className = 'orig-section';
+        root.appendChild(origSection);
+
+        // 節錄列表容器
+        const notesContainer = document.createElement('div');
+        notesContainer.id = 'notes-container';
+        root.appendChild(notesContainer);
+        const loading = document.createElement('div');
+        loading.className = 'card placeholder';
+        loading.innerHTML = '<p>⏳ 載入筆記中...</p>';
+        notesContainer.appendChild(loading);
+
+        // 訂閱 book doc（標題）
+        bookDocUnsub = bookDoc(bookId).onSnapshot(function (docSnap) {
+            if (!docSnap.exists) {
+                root.innerHTML = '';
+                const e = document.createElement('div');
+                e.className = 'card placeholder';
+                const p1 = document.createElement('p');
+                p1.innerHTML = '❌ <strong>搵唔到呢本書</strong>';
+                e.appendChild(p1);
+                const p2 = document.createElement('p');
+                p2.className = 'muted';
+                p2.textContent = '可能已被刪除。';
+                e.appendChild(p2);
+                const backBtn = document.createElement('button');
+                backBtn.className = 'btn-primary';
+                backBtn.textContent = '返回書櫃';
+                backBtn.onclick = function () { location.hash = '#/shelf'; };
+                e.appendChild(backBtn);
+                root.appendChild(e);
+                teardownBook();
+                return;
+            }
+            currentBookDoc = docSnap.data();
+            if (!titleEl.classList.contains('editing')) {
+                titleEl.textContent = currentBookDoc.title || '(未命名)';
+            }
+        }, function (err) { showToast('讀取書本失敗：' + err.message, 'error'); });
+
+        // 訂閱原文（獨立 doc，避開 1MB 限制）
+        bookOrigUnsub = sourceDoc(bookId).onSnapshot(function (docSnap) {
+            const text = (docSnap.exists && docSnap.data().originalText) ? docSnap.data().originalText : '';
+            if (!bookEditingLock) renderOriginalSection(origSection, bookId, text);
+        }, function (err) { console.error('原文訂閱失敗', err); });
+
+        // 訂閱節錄
+        bookNotesUnsub = notesCol(bookId).orderBy('order').onSnapshot(function (snap) {
+            bookNotes = snap.docs;
+            if (!isAnyNoteEditing()) renderNotesList(notesContainer, bookId);
+        }, function (err) {
+            console.error('節錄訂閱失敗', err);
+            notesContainer.innerHTML = '';
+            const e = document.createElement('div');
+            e.className = 'card placeholder';
+            const p1 = document.createElement('p');
+            p1.innerHTML = '❌ <strong>讀取節錄失敗</strong>';
+            e.appendChild(p1);
+            const p2 = document.createElement('p');
+            p2.className = 'muted';
+            p2.textContent = err.message;
+            e.appendChild(p2);
+            notesContainer.appendChild(e);
+        });
     }
 
-    // 7. 新增書本
-    async function addBookToShelf() {
-        const name = document.getElementById('new-book-name').value;
-        const pwd = document.getElementById('new-book-pwd').value;
-        if(!name || !pwd) return alert("請輸入書名同密碼");
-
-        bookshelfData.books.push({ name, pwd });
-        await saveBookshelfFile();
-        
-        document.getElementById('new-book-name').value = '';
-        document.getElementById('new-book-pwd').value = '';
-        renderShelf();
+    function beginEditBookTitle(bookId, titleEl) {
+        const oldVal = currentBookDoc ? (currentBookDoc.title || '') : '';
+        titleEl.classList.add('editing');
+        const input = document.createElement('input');
+        input.className = 'book-title-input';
+        input.value = oldVal;
+        titleEl.after(input);
+        input.focus(); input.select();
+        function commit() {
+            const newVal = input.value.trim();
+            input.remove();
+            titleEl.classList.remove('editing');
+            titleEl.textContent = newVal || oldVal || '(未命名)';
+            if (newVal && newVal !== oldVal) {
+                renameBookCloud(bookId, newVal)
+                    .then(function () { showToast('已改名', 'success'); })
+                    .catch(function (err) { showToast('改名失敗：' + err.message, 'error'); });
+            }
+        }
+        input.onblur = commit;
+        input.onkeydown = function (e) { if (e.key === 'Enter') input.blur(); };
     }
 
-    // 8. 刪除書本
-    async function deleteBookFromShelf(index) {
-        if(confirm(`確定要從目錄移除「${bookshelfData.books[index].name}」？`)) {
-            bookshelfData.books.splice(index, 1);
-            await saveBookshelfFile();
-            renderShelf();
+    /* ===== 連線狀態燈號 (Stage D) =====
+       務實做法：navigator.onLine + window online/offline 事件 + Firestore 操作結果驅動。
+       （Firestore 本身冇原生 .info/connected，呢個組合係業界常用替代方案）*/
+    function setupConnLight() {
+        setConnLight(navigator.onLine ? 'online' : 'offline');
+        window.addEventListener('online', function () { setConnLight('online'); showToast('已恢復連線，自動同步中', 'success'); });
+        window.addEventListener('offline', function () { setConnLight('offline'); showToast('已離線，變更會喺恢復連線後自動同步', 'info'); });
+    }
+    function setConnLight(state) {
+        const el = document.getElementById('conn-light');
+        const label = el.querySelector('.label');
+        el.className = state; // online / offline / syncing
+        label.textContent = state === 'online' ? '已連線' : (state === 'syncing' ? '同步中' : '離線');
+    }
+
+    // ===== Modal radio 選項 helper (Stage D-UX) =====
+    function makeOptionGroup(titleText, options, defaultVal) {
+        // options: [{ value, label, desc }]
+        const group = document.createElement('div');
+        group.className = 'option-group';
+        const title = document.createElement('div');
+        title.className = 'opt-title';
+        title.textContent = titleText;
+        group.appendChild(title);
+        const name = 'opt_' + Math.random().toString(36).slice(2);
+        options.forEach(function (opt) {
+            const item = document.createElement('label');
+            item.className = 'option-item' + (opt.value === defaultVal ? ' selected' : '');
+            const radio = document.createElement('input');
+            radio.type = 'radio'; radio.name = name; radio.value = opt.value;
+            radio.checked = (opt.value === defaultVal);
+            radio.onchange = function () {
+                group.querySelectorAll('.option-item').forEach(function (el) { el.classList.remove('selected'); });
+                item.classList.add('selected');
+            };
+            item.appendChild(radio);
+            const textWrap = document.createElement('div');
+            const label = document.createElement('div');
+            label.className = 'opt-label';
+            label.textContent = opt.label;
+            textWrap.appendChild(label);
+            const desc = document.createElement('div');
+            desc.className = 'opt-desc';
+            desc.textContent = opt.desc;
+            textWrap.appendChild(desc);
+            item.appendChild(textWrap);
+            group.appendChild(item);
+        });
+        return { el: group, name: name };
+    }
+    function getOptionValue(name) {
+        const checked = document.querySelector('input[name="' + name + '"]:checked');
+        return checked ? checked.value : null;
+    }
+    function triggerDownload(filename, jsonStr) {
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    /* ===== 匯出全庫 JSON（Stage D-UX：Modal 選擇 Full / Directory） ===== */
+    function exportLibraryJSON() {
+        const body = document.getElementById('modal-body');
+        body.innerHTML = '';
+        document.getElementById('modal-title').textContent = '💾 匯出全庫 JSON';
+        const og = makeOptionGroup('選擇匯出模式：', [
+            { value: 'full', label: '完整備份 (Full Backup)', desc: '導出所有書本嘅標題、原文、節錄、筆記（完整資料，適合備份遷移）。' },
+            { value: 'directory', label: '僅匯出目錄 (Directory Only)', desc: '只導出書本標題與順序，唔讀取原文同節錄（速度快、省 Firestore 讀取量，適合百本以上書櫃快速備份目錄）。' }
+        ], 'full');
+        body.appendChild(og.el);
+        document.getElementById('modal-overlay').style.display = 'flex';
+        const confirmBtn = document.getElementById('modal-confirm');
+        const cancelBtn = document.getElementById('modal-cancel');
+        confirmBtn.textContent = '開始匯出';
+        function cleanup() {
+            document.getElementById('modal-overlay').style.display = 'none';
+            confirmBtn.onclick = null; cancelBtn.onclick = null;
+            confirmBtn.textContent = '確認執行';
+        }
+        cancelBtn.onclick = cleanup;
+        confirmBtn.onclick = async function () {
+            const mode = getOptionValue(og.name) || 'full';
+            cleanup();
+            await executeExportLibrary(mode);
+        };
+    }
+
+    async function executeExportLibrary(mode) {
+        const uid = currentUser.uid;
+        const db = firebase.firestore();
+        const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        const exportBtn = document.querySelector('.btn-tool.btn-export');
+        if (exportBtn) { exportBtn.disabled = true; exportBtn.textContent = '⏳ 匯出中...'; }
+        setConnLight('syncing');
+        try {
+            const booksSnap = await db.collection('users').doc(uid).collection('books').orderBy('order').get();
+            const library = { books: [], exportMode: mode };
+
+            for (let i = 0; i < booksSnap.docs.length; i++) {
+                const bookDocSnap = booksSnap.docs[i];
+                const bookData = bookDocSnap.data();
+                const bookObj = {
+                    title: bookData.title || '(未命名)',
+                    order: typeof bookData.order === 'number' ? bookData.order : i
+                };
+
+                if (mode === 'full') {
+                    // 完整模式：讀原文 + 節錄
+                    bookObj.originalText = '';
+                    bookObj.extracts = [];
+                    try {
+                        const srcSnap = await bookDocSnap.ref.collection('source').doc('main').get();
+                        if (srcSnap.exists && srcSnap.data().originalText) {
+                            bookObj.originalText = srcSnap.data().originalText;
+                        }
+                    } catch (e) { /* 忽略 */ }
+                    try {
+                        const notesSnap = await bookDocSnap.ref.collection('notes').orderBy('order').get();
+                        notesSnap.forEach(function (n) {
+                            const d = n.data();
+                            bookObj.extracts.push({ subheading: d.subheading || '', extract: d.extract || '', note: d.note || '' });
+                        });
+                    } catch (e) { /* 忽略 */ }
+                }
+                // directory 模式：只有 title + order（連 originalText/extracts 都唔加）
+
+                library.books.push(bookObj);
+            }
+
+            const suffix = mode === 'directory' ? 'directory' : 'full';
+            triggerDownload('reading_notes_backup_' + suffix + '_' + ts + '.json', JSON.stringify(library, null, 2));
+            setConnLight(navigator.onLine ? 'online' : 'offline');
+            showToast('已匯出 ' + library.books.length + ' 本書（' + (mode === 'directory' ? '目錄' : '完整') + '）', 'success');
+        } catch (err) {
+            console.error('匯出失敗', err);
+            setConnLight(navigator.onLine ? 'online' : 'offline');
+            showToast('匯出失敗：' + err.message, 'error');
+        } finally {
+            if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = '💾 匯出全庫 JSON 本地備份'; }
         }
     }
+
+    /* ===== 單書匯出 JSON (Stage D-UX：對稱功能) ===== */
+    async function exportSingleBookJSON(bookId) {
+        const db = firebase.firestore();
+        const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        setConnLight('syncing');
+        try {
+            const bookSnap = await bookDoc(bookId).get();
+            if (!bookSnap.exists) { showToast('搵唔到呢本書', 'error'); return; }
+            const bookData = bookSnap.data();
+            const bookObj = {
+                title: bookData.title || '(未命名)',
+                order: typeof bookData.order === 'number' ? bookData.order : 0,
+                originalText: '',
+                extracts: []
+            };
+            // 讀原文
+            try {
+                const srcSnap = await sourceDoc(bookId).get();
+                if (srcSnap.exists && srcSnap.data().originalText) bookObj.originalText = srcSnap.data().originalText;
+            } catch (e) {}
+            // 讀節錄
+            try {
+                const notesSnap = await notesCol(bookId).orderBy('order').get();
+                notesSnap.forEach(function (n) {
+                    const d = n.data();
+                    bookObj.extracts.push({ subheading: d.subheading || '', extract: d.extract || '', note: d.note || '' });
+                });
+            } catch (e) {}
+            // 用 { books: [thisBook] } 格式，相容於 normalizer
+            const payload = { books: [bookObj] };
+            const safeTitle = (bookObj.title || 'book').replace(/[\\/:*?"<>|]/g, '_').substring(0, 40);
+            triggerDownload('single_book_' + safeTitle + '_' + ts + '.json', JSON.stringify(payload, null, 2));
+            setConnLight(navigator.onLine ? 'online' : 'offline');
+            showToast('已匯出「' + bookObj.title + '」（' + bookObj.extracts.length + ' 節錄）', 'success');
+        } catch (err) {
+            console.error('單書匯出失敗', err);
+            setConnLight(navigator.onLine ? 'online' : 'offline');
+            showToast('單書匯出失敗：' + err.message, 'error');
+        }
+    }
+
+    /* ===== 匯入 JSON 覆蓋 (Stage D) =====
+       1. 解析 JSON（支援多種格式：Phase 1 舊格式 / Phase 2 新格式）
+       2. normalize 為統一結構
+       3. Modal 確認 → 清空現有 → 寫入 Firestore */
+    function handleImportFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        event.target.value = '';
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            let parsed;
+            try {
+                parsed = JSON.parse(e.target.result);
+            } catch (err) {
+                showToast('JSON 格式錯誤，無法解析：' + err.message, 'error');
+                return;
+            }
+            const normalized = normalizeLibraryJSON(parsed);
+            if (!normalized || !normalized.books || normalized.books.length === 0) {
+                showToast('檔案中搵唔到任何書本資料', 'error');
+                return;
+            }
+            confirmAndImport(normalized);
+        };
+        reader.readAsText(file);
+    }
+
+    // ===== Normalizer 偵測輔助：判斷一個物件係「書」定「節錄」 =====
+    // 「書」特徵：有巢狀 extracts/notes/items 子陣列，或有 originalText/fullText/text 原文欄位
+    function looksLikeBookObj(obj) {
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+        if (Array.isArray(obj.extracts) || Array.isArray(obj.notes) || Array.isArray(obj.items)) return true;
+        if (obj.originalText || obj.fullText || obj.text) return true;
+        return false;
+    }
+    // 「節錄」特徵：有 subheading/heading/extract/original/quote/note/notes/myNote 等扁平欄位
+    function looksLikeExtractObj(obj) {
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+        return !!(obj.subheading || obj.heading || obj.extract || obj.original || obj.quote || obj.note || obj.notes || obj.myNote);
+    }
+
+    // Normalizer：將各種可能嘅 JSON 格式統一成 { books: [{ title, order, originalText, extracts: [{ subheading, extract, note }] }] }
+    // 修正：準確辨識「書名 → 節錄陣列」嘅層級（唔再把節錄當書）
+    function normalizeLibraryJSON(raw) {
+        let booksArr = null;
+
+        if (Array.isArray(raw)) {
+            // 情況 A：頂層係 array - 判斷元素係「書」定「節錄」
+            if (raw.length > 0 && looksLikeBookObj(raw[0])) {
+                booksArr = raw; // 係書陣列
+            } else if (raw.length > 0 && looksLikeExtractObj(raw[0])) {
+                // 係節錄陣列 → 包成一本未命名書
+                booksArr = [{ title: '(匯入的筆記)', extracts: raw }];
+            } else {
+                booksArr = raw; // 預設當書陣列（空或無法判斷）
+            }
+        } else if (raw && Array.isArray(raw.books)) {
+            // 情況 B：{ books: [...] }（Phase 2 匯出格式）
+            booksArr = raw.books;
+        } else if (raw && typeof raw === 'object') {
+            // 情況 C：物件 - key 可能係「分類/密碼」或「書名」，需逐一判斷
+            booksArr = [];
+            Object.keys(raw).forEach(function (key) {
+                const val = raw[key];
+                if (val && Array.isArray(val.books)) {
+                    // C1: { pwd/category: { books: [...] } } → key 係分類，取 books
+                    booksArr = booksArr.concat(val.books);
+                } else if (val && typeof val === 'object' && !Array.isArray(val) && looksLikeBookObj(val)) {
+                    // C2: { key: { title, extracts } } → val 本身係一本書
+                    booksArr.push(val);
+                } else if (Array.isArray(val)) {
+                    // C3: { key: [...] } → 判斷陣列元素係「書」定「節錄」
+                    if (val.length > 0 && looksLikeBookObj(val[0])) {
+                        // 元素係書 → key 係分類
+                        booksArr = booksArr.concat(val);
+                    } else {
+                        // 元素係節錄 → key 就係書名！（Phase 1 常見格式）
+                        booksArr.push({ title: key, extracts: val });
+                    }
+                }
+            });
+        }
+
+        if (!booksArr || booksArr.length === 0) return null;
+
+        // normalize 每本書
+        const result = { books: [] };
+        booksArr.forEach(function (book, index) {
+            if (!book || typeof book !== 'object') return;
+            const title = book.title || book.name || ('(未命名 #' + (index + 1) + ')');
+            const originalText = book.originalText || book.text || book.fullText || '';
+            let extracts = book.extracts || book.notes || book.items || [];
+            if (!Array.isArray(extracts)) extracts = [];
+
+            const normExtracts = extracts.map(function (ex) {
+                if (!ex || typeof ex !== 'object') return { subheading: '', extract: '', note: '' };
+                return {
+                    subheading: ex.subheading || ex.heading || ex.title || '',
+                    extract: ex.extract || ex.original || ex.quote || '',
+                    note: ex.note || ex.notes || ex.myNote || ''
+                };
+            }).filter(function (ex) {
+                // 至少要有內容先保留（避免空 note 污染）
+                return ex.subheading || ex.extract || ex.note;
+            });
+
+            // 只有當本書有原文或有至少一個節錄時先加入（避免空書污染）
+            if (originalText || normExtracts.length > 0) {
+                result.books.push({
+                    title: title,
+                    originalText: originalText,
+                    extracts: normExtracts
+                });
+            }
+        });
+
+        return result.books.length > 0 ? result : null;
+    }
+
+    // 從任意 JSON 抽出所有節錄（用於「單書匯入追加筆記」）
+    // 策略：normalize 後，把所有書嘅節錄合併成一個扁平陣列
+    function extractAllNotesFromJSON(raw) {
+        const normalized = normalizeLibraryJSON(raw);
+        if (!normalized) return [];
+        const all = [];
+        normalized.books.forEach(function (b) {
+            b.extracts.forEach(function (ex) { all.push(ex); });
+        });
+        return all;
+    }
+
+    /* ===== 單書匯入追加筆記 (Stage D-fix) =====
+       喺 #/book/{id} 內讀取舊 JSON，抽出所有節錄，追加到呢本書嘅 notes 子集合。
+       唔會覆蓋現有筆記，只會追加到末尾。*/
+    function handleSingleBookImportFile(bookId, event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        event.target.value = '';
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            let parsed;
+            try {
+                parsed = JSON.parse(e.target.result);
+            } catch (err) {
+                showToast('JSON 格式錯誤，無法解析：' + err.message, 'error');
+                return;
+            }
+            const notes = extractAllNotesFromJSON(parsed);
+            if (notes.length === 0) {
+                showToast('檔案中搵唔到任何節錄', 'error');
+                return;
+            }
+            confirmSingleBookImport(bookId, notes);
+        };
+        reader.readAsText(file);
+    }
+
+    function confirmSingleBookImport(bookId, notes) {
+        const body = document.getElementById('modal-body');
+        body.innerHTML = '';
+
+        const p = document.createElement('p');
+        p.innerHTML = '即將匯入 <strong>' + notes.length + ' 個節錄</strong> 到呢本書。';
+        body.appendChild(p);
+
+        // 模式選擇 radio
+        const og = makeOptionGroup('選擇匯入模式：', [
+            { value: 'overwrite', label: '覆蓋模式 (Overwrite)', desc: '先清空呢本書現有嘅所有 notes 同 source/main，再寫入 JSON 嘅內容。適合用於 update 或取代現有筆記。' },
+            { value: 'append', label: '追加模式 (Append)', desc: '保留現有筆記，新節錄接喺現有順序嘅最後面。適合合併多份備份。' }
+        ], 'append');
+        body.appendChild(og.el);
+
+        const preview = document.createElement('details');
+        preview.style.marginTop = '10px';
+        const summary = document.createElement('summary');
+        summary.textContent = '📋 預覽前 5 個節錄（撳展開）';
+        preview.appendChild(summary);
+        const ul = document.createElement('ul');
+        const previewCount = Math.min(notes.length, 5);
+        for (let i = 0; i < previewCount; i++) {
+            const ex = notes[i];
+            const li = document.createElement('li');
+            const heading = ex.subheading || '(未命名)';
+            const extractPreview = (ex.extract || '').substring(0, 40) + (ex.extract.length > 40 ? '...' : '');
+            li.textContent = heading + '：' + (extractPreview || '(空)');
+            ul.appendChild(li);
+        }
+        if (notes.length > previewCount) {
+            const li = document.createElement('li');
+            li.textContent = '... 仲有 ' + (notes.length - previewCount) + ' 個';
+            ul.appendChild(li);
+        }
+        preview.appendChild(ul);
+        body.appendChild(preview);
+
+        document.getElementById('modal-title').textContent = '📥 匯入單書 JSON';
+        document.getElementById('modal-overlay').style.display = 'flex';
+
+        const confirmBtn = document.getElementById('modal-confirm');
+        const cancelBtn = document.getElementById('modal-cancel');
+
+        function cleanup() {
+            document.getElementById('modal-overlay').style.display = 'none';
+            confirmBtn.onclick = null;
+            cancelBtn.onclick = null;
+        }
+        cancelBtn.onclick = cleanup;
+        confirmBtn.onclick = async function () {
+            const mode = getOptionValue(og.name) || 'append';
+            cleanup();
+            await executeSingleBookImport(bookId, notes, mode);
+        };
+    }
+
+    async function executeSingleBookImport(bookId, notes, mode) {
+        const db = firebase.firestore();
+        setConnLight('syncing');
+        const actionText = mode === 'overwrite' ? '覆蓋' : '追加';
+        showToast('開始' + actionText + ' ' + notes.length + ' 個節錄...', 'info');
+
+        // 覆蓋模式：先清空現有 notes + source
+        let baseOrder = 0;
+        if (mode === 'overwrite') {
+            try {
+                const existingNotesSnap = await notesCol(bookId).get();
+                const batch = db.batch();
+                existingNotesSnap.forEach(function (d) { batch.delete(d.ref); });
+                batch.delete(sourceDoc(bookId));
+                await batch.commit();
+                showToast('已清空現有筆記與原文', 'info');
+            } catch (err) {
+                console.error('清空失敗', err);
+                setConnLight(navigator.onLine ? 'online' : 'offline');
+                showToast('清空失敗：' + err.message, 'error');
+                return;
+            }
+        } else {
+            // 追加模式：取得現有末尾 order
+            try {
+                const snap = await notesCol(bookId).orderBy('order', 'desc').limit(1).get();
+                if (!snap.empty) {
+                    const last = snap.docs[0].data().order;
+                    baseOrder = (typeof last === 'number' ? last : 0) + 1;
+                }
+            } catch (e) { /* 空集合，baseOrder 保持 0 */ }
+        }
+
+        try {
+            const batchSize = 400;
+            let successCount = 0;
+            for (let i = 0; i < notes.length; i += batchSize) {
+                const batch = db.batch();
+                const end = Math.min(i + batchSize, notes.length);
+                for (let j = i; j < end; j++) {
+                    const noteRef = notesCol(bookId).doc();
+                    const ex = notes[j];
+                    batch.set(noteRef, {
+                        subheading: ex.subheading || '',
+                        extract: ex.extract || '',
+                        note: ex.note || '',
+                        order: baseOrder + j,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    successCount++;
+                }
+                await batch.commit();
+            }
+            setConnLight(navigator.onLine ? 'online' : 'offline');
+            showToast('已' + actionText + ' ' + successCount + ' 個節錄', 'success');
+        } catch (err) {
+            console.error('單書匯入失敗', err);
+            setConnLight(navigator.onLine ? 'online' : 'offline');
+            showToast(actionText + '失敗：' + err.message, 'error');
+        }
+    }
+
+    function confirmAndImport(library) {
+        const totalNotes = library.books.reduce(function (sum, b) { return sum + b.extracts.length; }, 0);
+        const summary = library.books.length + ' 本書，共 ' + totalNotes + ' 個節錄';
+
+        const body = document.getElementById('modal-body');
+        body.innerHTML = '';
+
+        const p = document.createElement('p');
+        p.innerHTML = '即將匯入：<strong>' + escapeHTML(summary) + '</strong>';
+        body.appendChild(p);
+
+        // 模式選擇 radio
+        const og = makeOptionGroup('選擇匯入模式：', [
+            { value: 'overwrite', label: '覆蓋模式 (Overwrite)', desc: '先搵出同名書本並清空佢哋嘅 notes 同 source，再寫入 JSON 內容。適合用於 update 現有書本而唔產生重複。未喺 JSON 出現嘅書本會保留。' },
+            { value: 'append', label: '追加模式 (Append)', desc: '所有書本都新建為獨立項目，追加到書櫃末尾。唔會刪除任何現有資料。適合合併多份備份。' }
+        ], 'append');
+        body.appendChild(og.el);
+
+        const bookList = document.createElement('details');
+        bookList.style.marginTop = '10px';
+        const summary2 = document.createElement('summary');
+        summary2.textContent = '📋 預覽書單（撳展開）';
+        bookList.appendChild(summary2);
+        const ul = document.createElement('ul');
+        library.books.forEach(function (b) {
+            const li = document.createElement('li');
+            li.textContent = b.title + '（' + b.extracts.length + ' 節錄' + (b.originalText ? '，含原文' : '，無原文') + '）';
+            ul.appendChild(li);
+        });
+        bookList.appendChild(ul);
+        body.appendChild(bookList);
+
+        document.getElementById('modal-title').textContent = '📥 確認匯入 JSON';
+        document.getElementById('modal-overlay').style.display = 'flex';
+
+        const confirmBtn = document.getElementById('modal-confirm');
+        const cancelBtn = document.getElementById('modal-cancel');
+
+        function cleanup() {
+            document.getElementById('modal-overlay').style.display = 'none';
+            confirmBtn.onclick = null;
+            cancelBtn.onclick = null;
+        }
+        cancelBtn.onclick = cleanup;
+        confirmBtn.onclick = async function () {
+            const mode = getOptionValue(og.name) || 'append';
+            cleanup();
+            await executeImport(library, mode);
+        };
+    }
+
+    async function executeImport(library, mode) {
+        const uid = currentUser.uid;
+        const db = firebase.firestore();
+        setConnLight('syncing');
+        const actionText = mode === 'overwrite' ? '覆蓋匯入' : '追加匯入';
+        showToast('開始' + actionText + ' ' + library.books.length + ' 本書...', 'info');
+
+        let successCount = 0;
+        let failCount = 0;
+        let overwrittenCount = 0;
+
+        // 覆蓋模式：先搵出同名書本並清空
+        const existingBooksMap = {};
+        if (mode === 'overwrite') {
+            try {
+                const existingSnap = await db.collection('users').doc(uid).collection('books').get();
+                existingSnap.forEach(function (d) {
+                    const t = (d.data().title || '').trim();
+                    if (t) existingBooksMap[t] = d;
+                });
+            } catch (e) { /* 忽略 */ }
+        }
+
+        for (let i = 0; i < library.books.length; i++) {
+            const book = library.books[i];
+            try {
+                let bookRef;
+
+                if (mode === 'overwrite' && existingBooksMap[book.title]) {
+                    // 覆蓋模式 + 同名書存在：清空現有 notes + source，再寫入
+                    bookRef = existingBooksMap[book.title].ref;
+                    const oldNotesSnap = await bookRef.collection('notes').get();
+                    const clearBatch = db.batch();
+                    oldNotesSnap.forEach(function (d) { clearBatch.delete(d.ref); });
+                    clearBatch.delete(bookRef.collection('source').doc('main'));
+                    await clearBatch.commit();
+                    overwrittenCount++;
+                } else {
+                    // 追加模式 或 覆蓋模式但無同名：新建書本
+                    bookRef = await db.collection('users').doc(uid).collection('books').add({
+                        title: book.title,
+                        order: Date.now() + i,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+
+                if (book.originalText) {
+                    await bookRef.collection('source').doc('main').set({
+                        originalText: book.originalText,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+
+                if (book.extracts.length > 0) {
+                    const batch = db.batch();
+                    book.extracts.forEach(function (ex, idx) {
+                        const noteRef = bookRef.collection('notes').doc();
+                        batch.set(noteRef, {
+                            subheading: ex.subheading || '',
+                            extract: ex.extract || '',
+                            note: ex.note || '',
+                            order: idx,
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                    });
+                    await batch.commit();
+                }
+
+                successCount++;
+            } catch (err) {
+                console.error('匯入書本失敗：' + book.title, err);
+                failCount++;
+            }
+        }
+
+        setConnLight(navigator.onLine ? 'online' : 'offline');
+        if (failCount === 0) {
+            const overwriteMsg = (mode === 'overwrite' && overwrittenCount > 0) ? '（覆蓋 ' + overwrittenCount + ' 本同名）' : '';
+            showToast(actionText + '完成！成功 ' + successCount + ' 本書' + overwriteMsg, 'success');
+        } else {
+            showToast(actionText + '完成：成功 ' + successCount + ' 本，失敗 ' + failCount + ' 本', 'error');
+        }
+    }
+
+    // ===== Bootstrap =====
+    window.addEventListener('hashchange', router);
+    initFirebase();
 </script>
+
 </body>
 </html>
